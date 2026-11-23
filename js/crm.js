@@ -187,7 +187,9 @@ async function pgEscolas(c){
   // login do SIG (só gestor geral); a senha só aparece ao clicar e fica registrada
   const acc = tem("acessos") ? Object.fromEntries((await S.api.select("escolas_acessos", { cols: "escola_id,sig_login" }).catch(() => [])).map(a => [a.escola_id, a])) : {};
   c.innerHTML = header("Escolas", E ? `<button class="btn" id="btNova">+ Nova escola</button>` : "") + `<div id="bd"></div>`;
+  const travas = new Set((await S.api.select("config", { eq: { chave: "travas_escolas" } }).catch(() => []))[0]?.valor || []);
   const b = new Board($("#bd"), {
+    travas, podeTravar: isMaster(), onTravar: lista => S.api.upsert("config", [{ chave: "travas_escolas", valor: lista }], "chave"),
     rows: S.escolas, team: S.team, groupBy: e => e.situacao === "ativa" ? "Ativas" : "Ex-clientes", groupColor: k => k === "Ativas" ? "#3560b5" : "#a9a9a9",
     searchText: e => [e.nome, e.cnpj, e.codigo, e.dre, ...(e.aliases || [])].join(" "),
     columns: [
@@ -506,8 +508,8 @@ async function pgMensalidades(c, ano){
   $("#selAno").onchange = () => pgMensalidades(c, +$("#selAno").value);
   const mesAtual = hojeComp;
   new Board($("#bd"), {
-    rows, team: S.team, groupBy: r => r.competencia, groupOrder: (a, b) => (a === mesAtual ? -1 : b === mesAtual ? 1 : b.localeCompare(a)),
-    groupLabel: k => "Mensalidades – " + compLabel(k) + (k === mesAtual ? " (mês atual)" : ""), collapsed: new Set(rows.map(r => r.competencia).filter(k => k !== mesAtual)),
+    rows, team: S.team, groupBy: r => r.competencia, groupOrder: (a, b) => a.localeCompare(b),
+    groupLabel: k => "Mensalidades – " + compLabel(k), lembrarGrupos: true, id: "mensalidades" + ano,
     searchText: r => r._nome,
     columns: [
       { key: "_nome", label: "Escola", type: "name", width: 260 },

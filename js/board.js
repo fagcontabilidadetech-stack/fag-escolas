@@ -25,8 +25,10 @@ export class Board {
     this.el = el; this.o = { rowKey: "id", collapsed: new Set(), ...opts }; this.q = "";
     this.fkey = "fag_filtros_" + (opts.id || location.hash.replace(/\W/g, "") || "q") + "_" + opts.columns.map(c => c.key).join(".");
     try { const f = JSON.parse(localStorage.getItem(this.fkey)) || {}; this.rules = f.rules || []; this.modo = f.modo || "e"; } catch { this.rules = []; this.modo = "e"; }
+    if (opts.lembrarGrupos){ try { const g = JSON.parse(localStorage.getItem(this.fkey + "_grp")); if (g) this.o.collapsed = new Set(g); } catch {} }
     this.render();
   }
+  travada(c){ return !!this.o.travas?.has(c.key); }
   saveF(){ try { localStorage.setItem(this.fkey, JSON.stringify({ rules: this.rules, modo: this.modo })); } catch {} }
   fcols(){ return this.o.columns.filter(c => c.type !== "custom" || c.fget).map((c, i) => ({ ...c, _i: this.o.columns.indexOf(c) })); }
   fval(c, r){ return c.fget ? c.fget(r) : (c.get ? c.get(r) : r[c.key]); }
@@ -100,7 +102,7 @@ export class Board {
   set rows(r){ this.o.rows = r; this.render(); }
   cell(row, c){
     const v = c.get ? c.get(row) : row[c.key];
-    const ed = c.editable && (typeof c.editable !== "function" || c.editable(row));
+    const ed = !this.travada(c) && c.editable && (typeof c.editable !== "function" || c.editable(row));
     switch (c.type){
       case "name": return `<a href="#" class="nm" data-open>${esc(v)}</a>${c.sub ? `<div class="small muted">${c.sub(row)}</div>` : ""}`;
       case "status": return chip(c.dict, v, { cls: ed ? "click" : "" });
@@ -140,7 +142,7 @@ export class Board {
       }).join("");
       return `<div class="bd-group" style="--gc:${color}">
         ${g.label != null ? `<div class="bd-gh" data-g="${esc(g.key)}"><span class="arr">${col ? "▸" : "▾"}</span> <b>${esc(g.label)}</b> <span class="muted small">${g.rows.length} ${g.rows.length === 1 ? "item" : "itens"}</span></div>` : ""}
-        ${col ? "" : `<div class="bd-wrap"><table class="bd"><thead><tr>${cols.map(c => `<th style="${c.width ? `width:${c.width}px;min-width:${c.width}px` : ""}" class="${["money","num"].includes(c.type) ? "n" : ""}">${esc(c.label)}</th>`).join("")}</tr></thead>
+        ${col ? "" : `<div class="bd-wrap"><table class="bd"><thead><tr>${cols.map(c => `<th style="${c.width ? `width:${c.width}px;min-width:${c.width}px` : ""}" class="${["money","num"].includes(c.type) ? "n" : ""} ${this.travada(c) ? "trv" : ""}">${esc(c.label)}${c.editable && this.o.travas ? ` <button class="lk" data-lk="${esc(c.key)}" title="${this.travada(c) ? "Coluna travada – clique para destravar" : "Travar coluna"}" ${this.o.podeTravar ? "" : "disabled"}>${this.travada(c) ? "🔒" : "🔓"}</button>` : ""}</th>`).join("")}</tr></thead>
         <tbody>${g.rows.map(r => `<tr data-k="${esc(r[o.rowKey])}">${cols.map((c, ci) => `<td data-c="${ci}" class="${["money","num"].includes(c.type) ? "n" : ""} ${["status","check","people","date"].includes(c.type) ? "c" : ""} ${c.editable ? "ed" : ""}">${this.cell(r, c)}</td>`).join("")}</tr>`).join("")
           || `<tr><td colspan="${cols.length}" class="muted small">Nada por aqui.</td></tr>`}</tbody>
         ${g.rows.length && o.summary !== false ? `<tfoot><tr>${sums}</tr></tfoot>` : ""}</table></div>`}
@@ -151,8 +153,13 @@ export class Board {
     this.el.querySelector(".bd-fbtn").onclick = e => { e.stopPropagation(); this.abrirFiltro(e.currentTarget); };
     this.el.querySelector(".bd-fclr")?.addEventListener("click", () => { this.rules = []; this.saveF(); this.render(); });
     s.oninput = () => { this.q = s.value; const p = s.selectionStart; this.render(); const n = this.el.querySelector(".bd-search"); n.focus(); n.setSelectionRange(p, p); };
-    $$(".bd-gh", this.el).forEach(h => h.onclick = () => { const k = h.dataset.g; o.collapsed.has(k) ? o.collapsed.delete(k) : o.collapsed.add(k); this.render(); });
+    $$(".bd-gh", this.el).forEach(h => h.onclick = () => { const k = h.dataset.g; o.collapsed.has(k) ? o.collapsed.delete(k) : o.collapsed.add(k);
+      if (o.lembrarGrupos) try { localStorage.setItem(this.fkey + "_grp", JSON.stringify([...o.collapsed])); } catch {}
+      this.render(); });
     this.el.querySelectorAll("tbody td").forEach(td => td.onclick = e => this.click(e, td));
+    this.el.querySelectorAll("[data-lk]").forEach(b => b.onclick = async e => { e.stopPropagation(); if (!o.podeTravar) return;
+      const k = b.dataset.lk; const t = new Set(o.travas); t.has(k) ? t.delete(k) : t.add(k);
+      try { await o.onTravar?.([...t]); o.travas = t; this.render(); } catch (err){ toast("Não foi possível salvar a trava: " + err.message); } });
     o.afterRender?.(this.el);
   }
   rowOf(td){ const k = td.parentElement.dataset.k; return this.o.rows.find(r => String(r[this.o.rowKey]) === k); }
@@ -169,7 +176,7 @@ export class Board {
     const row = this.rowOf(td); const c = this.o.columns[+td.dataset.c]; if (!row || !c) return;
     if (e.target.closest("[data-open]")){ e.preventDefault(); this.o.onOpen?.(row); return; }
     if (e.target.closest("a,button")) return;
-    const ed = c.editable && (typeof c.editable !== "function" || c.editable(row)); if (!ed) { if (c.type === "name") this.o.onOpen?.(row); return; }
+    const ed = !this.travada(c) && c.editable && (typeof c.editable !== "function" || c.editable(row)); if (!ed) { if (c.type === "name") this.o.onOpen?.(row); return; }
     const v = c.get ? c.get(row) : row[c.key];
     if (c.type === "status"){
       const p = popover(td, `<div class="pop-st">${Object.entries(c.dict).map(([k, d]) => `<button data-v="${esc(k)}" style="background:${d.color}">${esc(d.label)}</button>`).join("")}

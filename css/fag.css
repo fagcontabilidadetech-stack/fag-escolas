@@ -116,3 +116,6 @@ table.bd td:first-child a.nm{font-weight:600;color:var(--ink);text-decoration:no
 .f-chips{display:flex;flex-wrap:wrap;gap:5px}
 .f-chip{display:inline-flex;gap:5px;align-items:center;border:1px solid var(--line);border-left:5px solid var(--cc);border-radius:7px;padding:3px 8px;font-size:12.5px;cursor:pointer;background:#fff}
 .f-chip input{margin:0}
+.lk{border:0;background:transparent;cursor:pointer;font-size:12px;padding:0 2px;opacity:.55;vertical-align:middle}
+.lk:hover{opacity:1} .lk:disabled{cursor:default;opacity:.8}
+table.bd th.trv{background:#f3ecd8;color:#8a6d1f}

@@ -26,12 +26,12 @@ async function supabaseApi(){
       for (;;){ const d = chk(await applyF(sb.from(t).select(f.cols || "*"), f).range(from, from + PAGE - 1)); out = out.concat(d); if (d.length < PAGE) break; from += PAGE; }
       return out;
     },
-    async insert(t, rows){ fresh(); return chk(await sb.from(t).insert(rows).select()); },
-    async update(t, match, patch){ fresh(); let q = sb.from(t).update(patch); for (const [k, v] of Object.entries(match)) q = q.eq(k, v); return chk(await q.select()); },
+    async insert(t, rows){ return chk(await sb.from(t).insert(rows).select()); },
+    async update(t, match, patch){ let q = sb.from(t).update(patch); for (const [k, v] of Object.entries(match)) q = q.eq(k, v); return chk(await q.select()); },
     async upsert(t, rows, onConflict, { ignoreDuplicates = false } = {}){
       let out = []; for (let i = 0; i < rows.length; i += 500) out = out.concat(chk(await sb.from(t).upsert(rows.slice(i, i + 500), { onConflict, ignoreDuplicates }).select()));
       return out; },
-    async remove(t, match){ fresh(); let q = sb.from(t).delete(); for (const [k, v] of Object.entries(match)) q = q.eq(k, v); return chk(await q); },
+    async remove(t, match){ let q = sb.from(t).delete(); for (const [k, v] of Object.entries(match)) q = q.eq(k, v); return chk(await q); },
     async rpc(fn, args){ return chk(await sb.rpc(fn, args)); },
     auth: {
       async login(email, pin){ chk(await sb.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: pin })); },
@@ -87,8 +87,8 @@ function demoApi(){
   const api = {
     demo: true,
     async select(t, f = {}){ fresh(); return structuredClone(filt(T(t), f)); },
-    async insert(t, rows){ const out = [].concat(rows).map(r => ins(t, r)); save(); return structuredClone(out); },
-    async update(t, match, patch){ const out = filt(T(t), { eq: match }); out.forEach(r => Object.assign(r, patch)); save(); return structuredClone(out); },
+    async insert(t, rows){ fresh(); const out = [].concat(rows).map(r => ins(t, r)); save(); return structuredClone(out); },
+    async update(t, match, patch){ fresh(); const out = filt(T(t), { eq: match }); out.forEach(r => Object.assign(r, patch)); save(); return structuredClone(out); },
     async upsert(t, rows, onConflict, { ignoreDuplicates = false } = {}){
       fresh(); const keys = (onConflict || pk(t)).split(","); const out = [];
       for (const row of [].concat(rows)){
@@ -97,7 +97,7 @@ function demoApi(){
       }
       save(); return structuredClone(out);
     },
-    async remove(t, match){ db[t] = T(t).filter(x => !Object.entries(match).every(([k, v]) => x[k] === v)); save(); },
+    async remove(t, match){ fresh(); db[t] = T(t).filter(x => !Object.entries(match).every(([k, v]) => x[k] === v)); save(); },
     async rpc(fn, a){ return demoRpc(fn, a); },
     auth: {
       async login(email, pin){ if (!/^\d{6}$/.test(pin)) throw new Error("Invalid login credentials");

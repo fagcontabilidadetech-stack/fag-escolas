@@ -68,9 +68,17 @@ $("#btWaitOut").onclick = () => S.api.auth.logout();
   });
 })();
 
+async function carregarTravas(){
+  S.travas = new Set((await S.api.select("config", { eq: { chave: "travas_escolas" } }).catch(() => []))[0]?.valor || []);
+  return S.travas;
+}
+const travado = k => !!S.travas?.has(k);
+const LBL_TRAVA = " 🔒";
+
 async function boot(){
   const [cfg, escolas, perfis] = await Promise.all([S.api.select("config", { eq: { chave: "campanha" } }), S.api.select("escolas", { order: ["nome"] }), S.api.select("perfis").catch(() => [])]);
   S.cfg = cfg[0]?.valor || { ano: 2027, valorGuia: 6, vigencia: "", aberto: true };
+  await carregarTravas();
   setEscolas(escolas);
   S.perfis = perfis;
   const names = new Set(perfis.filter(p => p.ativo).map(p => p.nome));
@@ -187,13 +195,13 @@ async function pgEscolas(c){
   // login do SIG (só gestor geral); a senha só aparece ao clicar e fica registrada
   const acc = tem("acessos") ? Object.fromEntries((await S.api.select("escolas_acessos", { cols: "escola_id,sig_login" }).catch(() => [])).map(a => [a.escola_id, a])) : {};
   c.innerHTML = header("Escolas", E ? `<button class="btn" id="btNova">+ Nova escola</button>` : "") + `<div id="bd"></div>`;
-  const travas = new Set((await S.api.select("config", { eq: { chave: "travas_escolas" } }).catch(() => []))[0]?.valor || []);
+  const travas = await carregarTravas();
   const b = new Board($("#bd"), {
-    travas, podeTravar: isMaster(), onTravar: lista => S.api.upsert("config", [{ chave: "travas_escolas", valor: lista }], "chave"),
+    travas, podeTravar: isMaster(), onTravar: async lista => { await S.api.upsert("config", [{ chave: "travas_escolas", valor: lista }], "chave"); S.travas = new Set(lista); audit("travas_colunas", "config", null, { colunas: lista }); },
     rows: S.escolas, team: S.team, groupBy: e => e.situacao === "ativa" ? "Ativas" : "Ex-clientes", groupColor: k => k === "Ativas" ? "#3560b5" : "#a9a9a9",
     searchText: e => [e.nome, e.cnpj, e.codigo, e.dre, ...(e.aliases || [])].join(" "),
     columns: [
-      { key: "nome", label: "Escola", type: "name", width: 280, sub: e => `${esc(e.cnpj || "")}` },
+      { key: "nome", label: "Escola", type: "name", width: 280, travavel: true, sub: e => `${esc(e.cnpj || "")}` },
       { key: "codigo", label: "ID", type: "text", width: 70, editable: E },
       { key: "dre", label: "DRE", type: "text", width: 60, editable: E },
       { key: "grupo", label: "Grupo", type: "status", dict: ST.grupo, width: 80, editable: E, battery: true },
@@ -201,8 +209,8 @@ async function pgEscolas(c){
       { key: "honorario", label: "Mensalidade", type: "money", width: 110, editable: isMaster() },
       { key: "responsaveis", label: "Responsáveis", type: "people", width: 120, editable: E },
       ...(tem("acessos") ? [
-        { key: "sig_login", label: "SIG – login", type: "custom", width: 150, fget: e => acc[e.id]?.sig_login || "", render: e => acc[e.id]?.sig_login ? `<span class="mono">${esc(acc[e.id].sig_login)}</span> <button class="btn ghost sm" data-cpl="${e.id}" title="Copiar login">⧉</button>` : `<span class="muted small">–</span>` },
-        { key: "sig_senha", label: "SIG – senha", type: "custom", width: 150, render: e => acc[e.id] ? `<span class="mono" data-pw="${e.id}">••••••</span> <button class="btn ghost sm" data-ver="${e.id}" title="Mostrar senha">👁</button>` : `<span class="muted small">–</span>` },
+        { key: "sig_login", label: "SIG – login", type: "custom", width: 150, travavel: true, fget: e => acc[e.id]?.sig_login || "", render: e => acc[e.id]?.sig_login ? `<span class="mono">${esc(acc[e.id].sig_login)}</span> <button class="btn ghost sm" data-cpl="${e.id}" title="Copiar login">⧉</button>` : `<span class="muted small">–</span>` },
+        { key: "sig_senha", label: "SIG – senha", type: "custom", width: 150, travavel: true, render: e => acc[e.id] ? `<span class="mono" data-pw="${e.id}">••••••</span> <button class="btn ghost sm" data-ver="${e.id}" title="Mostrar senha">👁</button>` : `<span class="muted small">–</span>` },
       ] : []),
       { key: "procuracao_validade", label: "Procuração", type: "date", width: 100, editable: E },
       { key: "chave", label: "Chave do portal", type: "custom", width: 150, fget: e => e.chave || "", render: e => e.chave ? `<span class="mono">${fmtKey(e.chave)}</span> <button class="btn ghost sm" data-cp="${e.id}" title="Copiar mensagem com link">⧉</button>` : `<span class="muted small">sem chave</span>` },
@@ -229,20 +237,22 @@ async function copiarLink(e){
 }
 function editarEscola(e, done){
   const n = !e; e = e || { situacao: "ativa", grupo: "A", responsaveis: [] };
-  const f = (k, l, t = "text") => `<div class="field"><label class="f">${l}</label><input class="in" data-k="${k}" type="${t}" value="${esc(e[k] ?? "")}" ${t === "number" ? 'step="0.01"' : ""}></div>`;
+  const tv = k => !n && travado(k);
+  const f = (k, l, t = "text") => `<div class="field"><label class="f">${l}${tv(k) ? LBL_TRAVA : ""}</label><input class="in" data-k="${k}" type="${t}" value="${esc(e[k] ?? "")}" ${t === "number" ? 'step="0.01"' : ""} ${tv(k) ? 'disabled title="Coluna travada pelo gestor"' : ""}></div>`;
   const m = modal(`<h2>${n ? "Nova escola" : "Editar dados"}</h2>
     ${f("nome", "Nome")}<div class="grid3">${f("cnpj", "CNPJ")}${f("codigo", "ID interno")}${f("dre", "DRE")}</div>
     <div class="grid3">${f("ccm", "CCM")}${f("telefone", "Telefone")}${f("procuracao_validade", "Validade da procuração", "date")}</div>
     ${f("email", "E-mail", "email")}
-    <div class="grid3"><div class="field"><label class="f">Grupo</label><select class="in" data-k="grupo"><option ${e.grupo === "A" ? "selected" : ""}>A</option><option ${e.grupo === "B" ? "selected" : ""}>B</option></select></div>
+    <div class="grid3"><div class="field"><label class="f">Grupo${tv("grupo") ? LBL_TRAVA : ""}</label><select class="in" data-k="grupo" ${tv("grupo") ? "disabled" : ""}><option ${e.grupo === "A" ? "selected" : ""}>A</option><option ${e.grupo === "B" ? "selected" : ""}>B</option></select></div>
       ${isMaster() || n ? f("honorario", "Mensalidade vigente", "number") : ""}
-      <div class="field"><label class="f">Situação</label><select class="in" data-k="situacao"><option value="ativa">Ativa</option><option value="ex-cliente" ${e.situacao === "ex-cliente" ? "selected" : ""}>Ex-cliente</option></select></div></div>
+      <div class="field"><label class="f">Situação${tv("situacao") ? LBL_TRAVA : ""}</label><select class="in" data-k="situacao" ${tv("situacao") ? "disabled" : ""}><option value="ativa">Ativa</option><option value="ex-cliente" ${e.situacao === "ex-cliente" ? "selected" : ""}>Ex-cliente</option></select></div></div>
     <div class="field"><label class="f">Outros nomes (como aparece no monday, separados por ;)</label><input class="in" data-k="aliases" value="${esc((e.aliases || []).join("; "))}"></div>
     <div class="field"><label class="f">Observações</label><textarea class="in" data-k="obs" rows="2">${esc(e.obs || "")}</textarea></div>
     <div style="display:flex;gap:8px"><button class="btn" id="ok">Salvar</button><button class="btn sec" id="cx">Cancelar</button></div><div class="err" id="er"></div>`, { wide: true });
   m.q("#cx").onclick = m.close;
   m.q("#ok").onclick = async () => {
-    const d = {}; m.querySelectorAll("[data-k]").forEach(i => { let v = i.value.trim(); d[i.dataset.k] = v === "" ? null : v; });
+    const d = {}; m.querySelectorAll("[data-k]").forEach(i => { if (i.disabled) return; let v = i.value.trim(); d[i.dataset.k] = v === "" ? null : v; });
+    if (!n && travado("nome")) d.nome = e.nome;
     d.aliases = (d.aliases || "").split(";").map(s => s.trim()).filter(Boolean);
     if (d.honorario != null) d.honorario = +d.honorario;
     if (!d.nome) return m.q("#er").textContent = "Informe o nome.";
@@ -309,12 +319,13 @@ async function fDados(fb, e, again){
       .map(([l, v]) => `<tr><td class="muted" style="width:180px;padding:5px 0">${l}</td><td>${esc(v || "–")}</td></tr>`).join("")}</table></div>
     ${tem("acessos") ? `<div class="card"><h3>Acessos (SIG / Senha Web)</h3><p class="small muted">${edita("acessos") ? "Você pode ver e alterar." : "Você pode ver."} Cada consulta fica registrada.</p>
       <div id="acc"><button class="btn sm sec" id="verAcc">Mostrar acessos</button></div></div>` : ""}`;
-  fb.querySelector("#ed")?.addEventListener("click", () => editarEscola(e, again));
+  fb.querySelector("#ed")?.addEventListener("click", async () => { await carregarTravas(); editarEscola(e, again); });
   fb.querySelector("#verAcc")?.addEventListener("click", async () => {
     const a = await S.api.rpc("ver_acessos", { p_escola: e.id }) || {};
     const box = fb.querySelector("#acc"); const ro = edita("acessos") ? "" : "readonly";
-    box.innerHTML = `<div class="grid3"><div class="field"><label class="f">SIG – login</label><input class="in" id="a1" ${ro} value="${esc(a.sig_login || "")}"></div>
-      <div class="field"><label class="f">SIG – senha</label><input class="in" id="a2" ${ro} value="${esc(a.sig_senha || "")}"></div>
+    await carregarTravas(); const r1 = travado("sig_login") ? "readonly" : ro, r2_ = travado("sig_senha") ? "readonly" : ro;
+    box.innerHTML = `<div class="grid3"><div class="field"><label class="f">SIG – login${travado("sig_login") ? LBL_TRAVA : ""}</label><input class="in" id="a1" ${r1} value="${esc(a.sig_login || "")}"></div>
+      <div class="field"><label class="f">SIG – senha${travado("sig_senha") ? LBL_TRAVA : ""}</label><input class="in" id="a2" ${r2_} value="${esc(a.sig_senha || "")}"></div>
       <div class="field"><label class="f">Senha Web</label><input class="in" id="a3" ${ro} value="${esc(a.senha_web || "")}"></div></div>
       ${edita("acessos") ? `<button class="btn sm" id="svA">Salvar acessos</button>` : ""}`;
     box.querySelector("#svA")?.addEventListener("click", async () => {

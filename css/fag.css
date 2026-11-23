@@ -96,3 +96,13 @@ table.bd td:first-child a.nm{font-weight:600;color:var(--ink);text-decoration:no
 .kb-list{padding:8px;display:flex;flex-direction:column;gap:8px}
 .kb-card{background:#fff;border-radius:9px;padding:10px;border:1px solid var(--line);cursor:grab;font-size:13px}
 .kb-card.drag{opacity:.4}
+
+/* ============ rodapé institucional ============ */
+.fag-footer{position:relative;z-index:1;background:#fff;border-top:1px solid var(--line);color:var(--muted);font-size:13px;padding:18px 20px 16px}
+.fag-footer .in-f{max-width:1100px;margin:0 auto;display:flex;flex-wrap:wrap;gap:14px 28px;align-items:center;justify-content:center;text-align:center}
+.fag-footer .marca{display:flex;align-items:center;gap:10px}
+.fag-footer .marca img{height:34px}
+.fag-footer b{color:var(--ink)}
+.fag-footer a{color:var(--blue);text-decoration:none}
+.fag-footer a:hover{text-decoration:underline}
+.fag-footer .copy{flex-basis:100%;font-size:12px;opacity:.85}

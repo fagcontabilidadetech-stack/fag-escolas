@@ -58,8 +58,19 @@ export function abrirImportador(S, done){
   };
 
   // Mostra os nomes que não casaram com nenhuma escola e permite associar à mão
+  // escolas do Info APM's que não estão no CRM → serão criadas como ex-clientes
+  function exClientes(){
+    if (!dados.info) return [];
+    const tem = new Set(S.escolas.map(e => onlyDig(e.cnpj)));
+    return dados.info.filter(r => onlyDig(r.text_mknj7v3m).length === 14 && !tem.has(onlyDig(r.text_mknj7v3m)));
+  }
+  const pendAlias = {};   // aliases escolhidos para ex-clientes ainda não criadas (cnpj → nomes)
+
+  // Mostra os nomes que não casaram com nenhuma escola e permite associar à mão
   function revisar(){
-    const match = makeMatcher(S.escolas);
+    const ex = exClientes();
+    const virt = ex.map(r => ({ id: "novo:" + onlyDig(r.text_mknj7v3m), nome: r._name, aliases: [] }));
+    const match = makeMatcher([...S.escolas, ...virt]);
     const nomes = new Map();
     for (const [k, rows] of Object.entries(dados)){
       if (k === "info") continue;
@@ -67,9 +78,11 @@ export function abrirImportador(S, done){
         if (k === "contratos" && yearOf(r._group) === S.cfg.ano) continue;
         if (!match(n)) nomes.set(normName(n).join(" "), n); }
     }
-    const opts = `<option value="">— ignorar —</option>` + S.escolas.map(e => `<option value="${e.id}">${esc(e.nome)}</option>`).join("");
+    const opts = `<option value="">— ignorar —</option>` + S.escolas.map(e => `<option value="${e.id}">${esc(e.nome)}${e.situacao !== "ativa" ? " (ex-cliente)" : ""}</option>`).join("")
+      + virt.map(v => `<option value="${v.id}">${esc(v.nome)} (ex-cliente, nova)</option>`).join("");
     md.q("#rev").innerHTML = `<hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
-      ${nomes.size ? `<h3>${nomes.size} nome(s) do monday sem escola correspondente</h3><p class="small muted">Associe à escola certa (o nome fica salvo como "outro nome" da escola) ou deixe ignorar: ex-clientes, por exemplo.</p>
+      ${ex.length ? `<div class="notice info small"><b>${ex.length} escola(s) do Info APM's não estão no CRM</b> e serão cadastradas como <b>ex-clientes</b>, com o histórico delas: ${ex.map(r => esc(r._name)).join(", ")}.</div>` : ""}
+      ${nomes.size ? `<h3>${nomes.size} nome(s) do monday sem escola correspondente</h3><p class="small muted">Associe à escola certa (o nome fica salvo como "outro nome" da escola) ou deixe em ignorar.</p>
       <div style="max-height:280px;overflow:auto">${[...nomes.values()].sort().map(n => `<div style="display:flex;gap:8px;align-items:center;margin-bottom:5px"><span class="small" style="flex:1">${esc(n)}</span><select class="in" style="max-width:340px" data-al="${esc(n)}">${opts}</select></div>`).join("")}</div>`
       : `<div class="notice ok small">Todas as escolas do monday foram reconhecidas.</div>`}
       <button class="btn ok" id="imp" style="margin-top:10px">Importar para o CRM</button>`;
@@ -80,8 +93,17 @@ export function abrirImportador(S, done){
     md.q("#imp").disabled = true;
     try {
       // 1) salva os "outros nomes" escolhidos
-      for (const s of md.querySelectorAll("[data-al]")){ if (!s.value) continue; const e = S.esc[s.value];
+      for (const s of md.querySelectorAll("[data-al]")){ if (!s.value) continue;
+        if (s.value.startsWith("novo:")){ (pendAlias[s.value.slice(5)] ||= []).push(s.dataset.al); continue; }
+        const e = S.esc[s.value];
         e.aliases = [...new Set([...(e.aliases || []), s.dataset.al])]; await S.api.update("escolas", { id: e.id }, { aliases: e.aliases }); }
+      // 2) cadastra como ex-clientes as escolas do Info APM's que não estão no CRM
+      const ex = exClientes();
+      if (ex.length){ log(`Cadastrando ${ex.length} ex-cliente(s)…`);
+        const novas = await S.api.upsert("escolas", ex.map(r => ({ nome: r._name.trim(), cnpj: r.text_mknj7v3m.trim(), situacao: "ex-cliente", codigo: r.text_mksrehar || null,
+          dre: r.text_mknj6f3p || null, email: r.email_mknjfk10 || null, telefone: r.text_mknjh05p || null, ccm: r.text_mknjmtrd || null,
+          procuracao_validade: date(r.date_mksfaz4r), monday_id: r._id, aliases: pendAlias[onlyDig(r.text_mknj7v3m)] || [] })), "cnpj");
+        novas.forEach(e => { if (!S.esc[e.id]){ S.escolas.push(e); S.esc[e.id] = e; } }); }
       const match = makeMatcher(S.escolas);
       const idOf = n => match(n)?.escola.id || null;
       const R = {};

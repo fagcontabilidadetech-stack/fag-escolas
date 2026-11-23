@@ -173,6 +173,8 @@ async function pgPainel(c){
 
 /* =============== ESCOLAS =============== */
 async function pgEscolas(c){
+  // login do SIG (só gestor geral); a senha só aparece ao clicar e fica registrada
+  const acc = isMaster() ? Object.fromEntries((await S.api.select("escolas_acessos", { cols: "escola_id,sig_login" }).catch(() => [])).map(a => [a.escola_id, a])) : {};
   c.innerHTML = header("Escolas", tem("escolas") ? `<button class="btn" id="btNova">+ Nova escola</button>` : "") + `<div id="bd"></div>`;
   const b = new Board($("#bd"), {
     rows: S.escolas, team: S.team, groupBy: e => e.situacao === "ativa" ? "Ativas" : "Ex-clientes", groupColor: k => k === "Ativas" ? "#3560b5" : "#a9a9a9",
@@ -184,13 +186,26 @@ async function pgEscolas(c){
       { key: "grupo", label: "Grupo", type: "status", dict: ST.grupo, width: 80, editable: tem("escolas"), battery: true },
       { key: "honorario", label: "Mensalidade", type: "money", width: 110, editable: isMaster() },
       { key: "responsaveis", label: "Responsáveis", type: "people", width: 120, editable: tem("escolas") },
-      { key: "telefone", label: "Telefone", type: "text", width: 120, editable: tem("escolas") },
+      ...(isMaster() ? [
+        { key: "sig_login", label: "SIG – login", type: "custom", width: 150, render: e => acc[e.id]?.sig_login ? `<span class="mono">${esc(acc[e.id].sig_login)}</span> <button class="btn ghost sm" data-cpl="${e.id}" title="Copiar login">⧉</button>` : `<span class="muted small">–</span>` },
+        { key: "sig_senha", label: "SIG – senha", type: "custom", width: 150, render: e => acc[e.id] ? `<span class="mono" data-pw="${e.id}">••••••</span> <button class="btn ghost sm" data-ver="${e.id}" title="Mostrar senha">👁</button>` : `<span class="muted small">–</span>` },
+      ] : []),
       { key: "procuracao_validade", label: "Procuração", type: "date", width: 100, editable: tem("escolas") },
       { key: "chave", label: "Chave do portal", type: "custom", width: 150, render: e => e.chave ? `<span class="mono">${fmtKey(e.chave)}</span> <button class="btn ghost sm" data-cp="${e.id}" title="Copiar mensagem com link">⧉</button>` : `<span class="muted small">sem chave</span>` },
     ],
     onOpen: e => fichaEscola(e.id),
     onEdit: async (e, key, v) => { await S.api.update("escolas", { id: e.id }, { [key]: v }); },
-    afterRender: el => $$("[data-cp]", el).forEach(btn => btn.onclick = () => copiarLink(S.esc[btn.dataset.cp])),
+    afterRender: el => {
+      $$("[data-cp]", el).forEach(btn => btn.onclick = () => copiarLink(S.esc[btn.dataset.cp]));
+      $$("[data-cpl]", el).forEach(btn => btn.onclick = async () => { try { await navigator.clipboard.writeText(acc[btn.dataset.cpl].sig_login); toast("Login copiado"); } catch {} });
+      $$("[data-ver]", el).forEach(btn => btn.onclick = async () => {
+        const span = el.querySelector(`[data-pw="${btn.dataset.ver}"]`);
+        if (btn.dataset.on){ span.textContent = "••••••"; btn.textContent = "👁"; delete btn.dataset.on; return; }
+        const a = await S.api.rpc("ver_acessos", { p_escola: btn.dataset.ver }) || {};
+        span.textContent = a.sig_senha || "(sem senha)"; btn.textContent = "🙈"; btn.dataset.on = 1;
+        try { if (a.sig_senha) { await navigator.clipboard.writeText(a.sig_senha); toast("Senha copiada"); } } catch {}
+      });
+    },
   });
   if ($("#btNova")) $("#btNova").onclick = () => editarEscola(null, () => { b.rows = S.escolas; });
 }

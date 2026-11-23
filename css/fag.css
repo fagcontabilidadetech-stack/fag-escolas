@@ -1,0 +1,98 @@
+/* ============ FAG Escolas — identidade visual (cores tiradas do logo) ============ */
+:root{
+  --red:#ef3a20; --blue:#3560b5; --green:#63b231; --yellow:#fabb17; --orange:#f46e16;
+  --pink:#f89fa1; --cream:#f1e6b8; --sky:#66c8f0; --navy:#22305e;
+  --ink:#1d2640; --muted:#5d6680; --line:#e8e2cf; --bg:#fcfaf3; --card:#fff; --soft:#f6f1df;
+  --ok:#3f8f1f; --warn:#e06410; --bad:#d8331b; --radius:14px;
+  --font-title:'Fredoka','Segoe UI',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14.5px;line-height:1.45}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--blue)}
+.hidden{display:none!important}
+h1,h2,h3{font-family:var(--font-title);font-weight:600;color:var(--blue);margin:0 0 10px}
+h1{font-size:24px} h2{font-size:19px} h3{font-size:16px}
+.muted{color:var(--muted)} .small{font-size:12.5px} .mono{font-family:Consolas,Menlo,monospace}
+.rainbow{height:5px;background:linear-gradient(90deg,var(--red) 0 25%,var(--yellow) 25% 50%,var(--green) 50% 75%,var(--blue) 75%)}
+
+/* campos e botões */
+label.f{display:block;font-size:12.5px;color:var(--muted);font-weight:600;margin:0 0 4px}
+.in,select.in,textarea.in{width:100%;padding:9px 11px;border:1px solid #d6cfb8;border-radius:9px;background:#fff}
+.in:focus{outline:2px solid var(--blue);outline-offset:0;border-color:var(--blue)}
+.field{margin-bottom:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:760px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;border-radius:9px;padding:9px 16px;background:var(--blue);color:#fff;font-weight:600;cursor:pointer;white-space:nowrap;text-decoration:none}
+.btn:hover{filter:brightness(1.08)} .btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.sec{background:var(--soft);color:var(--ink)} .btn.ok{background:var(--ok)} .btn.bad{background:var(--bad)} .btn.warn{background:var(--warn)} .btn.red{background:var(--red)}
+.btn.sm{padding:5px 10px;font-size:12.5px;border-radius:7px} .btn.big{width:100%;padding:13px;font-size:16px}
+.btn.ghost{background:transparent;color:var(--blue);padding:5px 8px}
+.err{color:var(--bad);font-size:13.5px;margin-top:8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin-bottom:16px}
+.notice{border-radius:10px;padding:12px 14px;margin:10px 0;font-size:14px}
+.notice.info{background:#e7eefb;border:1px solid #b9cbef} .notice.ok{background:#e9f6e2;border:1px solid #bfe3ad}
+.notice.warn{background:#fff4dc;border:1px solid #f4d48e} .notice.bad{background:#fdebe7;border:1px solid #f4bcb1}
+.chip{display:inline-flex;align-items:center;justify-content:center;min-width:92px;padding:4px 10px;border-radius:6px;color:#fff;font-size:12.5px;font-weight:600;white-space:nowrap;border:0;cursor:default}
+.chip.click{cursor:pointer} .chip.mini{min-width:0;padding:2px 6px;font-size:11px}
+.tag{display:inline-block;background:var(--soft);border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;margin:1px 2px 1px 0}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 18px;border-radius:9px;font-size:14px;z-index:999;opacity:0;transition:.2s;pointer-events:none}
+.toast.on{opacity:1}
+
+/* modal / gaveta */
+.modal-bg{position:fixed;inset:0;background:rgba(20,28,50,.45);display:flex;align-items:flex-start;justify-content:center;padding:40px 14px;overflow:auto;z-index:80}
+.modal{background:#fff;border-radius:var(--radius);max-width:640px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.drawer-bg{position:fixed;inset:0;background:rgba(20,28,50,.35);z-index:70}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(980px,100%);background:var(--bg);z-index:71;display:flex;flex-direction:column;box-shadow:-10px 0 40px rgba(0,0,0,.15)}
+.drawer-h{background:#fff;padding:16px 22px;border-bottom:1px solid var(--line)}
+.drawer-b{flex:1;overflow:auto;padding:18px 22px}
+.tabs{display:flex;gap:4px;flex-wrap:wrap}
+.tab{padding:7px 13px;border-radius:9px;background:var(--soft);cursor:pointer;font-weight:600;border:0;font-size:13.5px}
+.tab.on{background:var(--blue);color:#fff}
+
+/* decoração com os desenhos do logo */
+.deco{position:fixed;top:0;bottom:0;width:min(15vh,150px);background-repeat:no-repeat;background-size:100% auto;background-position:top;pointer-events:none;z-index:0}
+.deco.l{left:0;background-image:url(../assets/deco_left.webp)}
+.deco.r{right:0;background-image:url(../assets/deco_right.webp)}
+.deco.b{height:110px;background-image:url(../assets/deco_bottom.webp);background-size:auto 100%;background-repeat:no-repeat;background-position:center bottom;display:none}
+@media(max-width:1060px){.deco.l,.deco.r{display:none}.deco.b{display:block}}
+
+/* ============ quadros (estilo monday) ============ */
+.bd-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.bd-tools .sp{flex:1}
+.bd-group{margin-bottom:22px}
+.bd-gh{cursor:pointer;color:var(--gc);font-family:var(--font-title);font-size:17px;margin:0 0 6px;user-select:none}
+.bd-gh .muted{font-family:"Segoe UI",sans-serif;font-size:12.5px;margin-left:6px}
+.bd-wrap{overflow:auto;border-radius:10px;border:1px solid var(--line);border-left:6px solid var(--gc);background:#fff}
+table.bd{border-collapse:collapse;width:100%;font-size:13.5px}
+table.bd th{background:#faf7ec;text-align:left;padding:8px 10px;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;border-bottom:1px solid var(--line);font-weight:700}
+table.bd td{padding:6px 10px;border-bottom:1px solid #f0ebda;border-right:1px solid #f5f1e3;vertical-align:middle}
+table.bd td.n,table.bd th.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.bd td.c{text-align:center}
+table.bd td.ed{cursor:pointer} table.bd td.ed:hover{background:#fbf8ee}
+table.bd tbody tr:hover td{background:#fdfbf4}
+table.bd tfoot td{background:#fcfaf3;border-top:1px solid var(--line)}
+table.bd td:first-child a.nm{font-weight:600;color:var(--ink);text-decoration:none} table.bd td:first-child a.nm:hover{color:var(--blue);text-decoration:underline}
+.cell-in{padding:4px 6px!important;min-width:90px}
+.ck{display:inline-flex;width:20px;height:20px;border:2px solid #cfc8b0;border-radius:5px;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:13px}
+.ck.on{background:var(--green);border-color:var(--green)} .ck.click{cursor:pointer}
+.av{display:inline-flex;width:26px;height:26px;border-radius:50%;background:var(--blue);color:#fff;font-size:11px;font-weight:700;align-items:center;justify-content:center;margin:0 1px;border:2px solid #fff}
+.av:nth-child(2n){background:var(--orange)} .av:nth-child(3n){background:var(--green)}
+.battery{display:flex;height:16px;border-radius:4px;overflow:hidden;min-width:90px;background:#eee}
+.battery i{display:block;height:100%}
+.pop{position:fixed;z-index:200;background:#fff;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.2);padding:8px;max-height:60vh;overflow:auto}
+.pop-st{display:flex;flex-direction:column;gap:5px;min-width:170px}
+.pop-st button{border:0;border-radius:6px;color:#fff;font-weight:600;padding:7px 10px;cursor:pointer;font-size:13px}
+.pop-st button:hover{filter:brightness(1.1)}
+.pop-pp{display:flex;flex-direction:column;gap:4px;min-width:200px} .pop-pp label{display:flex;gap:6px;font-size:13.5px;padding:3px}
+/* kanban */
+.kb{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(230px,1fr);gap:12px;overflow:auto;padding-bottom:6px}
+.kb-col{background:#f6f2e3;border-radius:12px;min-height:200px;display:flex;flex-direction:column}
+.kb-col.over{outline:2px dashed var(--blue)}
+.kb-h{color:#fff;font-weight:700;padding:8px 12px;border-radius:12px 12px 0 0;display:flex;justify-content:space-between}
+.kb-list{padding:8px;display:flex;flex-direction:column;gap:8px}
+.kb-card{background:#fff;border-radius:9px;padding:10px;border:1px solid var(--line);cursor:grab;font-size:13px}
+.kb-card.drag{opacity:.4}

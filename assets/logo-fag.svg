@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 40 740 470" width="740" height="470">
+  <g fill="none" stroke="#e5262a" stroke-width="27">
+    <path d="M114 276 V68 H246 M114 163 H232" stroke-linejoin="miter"/>
+    <path d="M268 276 L350 58 L432 276" stroke-linejoin="miter"/>
+    <path d="M642 111 A98 98 0 1 0 658 172 H576"/>
+  </g>
+  <circle cx="350" cy="200" r="30" fill="#e5262a"/>
+  <path d="M30 282 L380 396 L732 290" fill="none" stroke="#e5262a" stroke-width="24" stroke-linejoin="miter" stroke-miterlimit="10"/>
+  <text x="378" y="490" text-anchor="middle" font-family="Calibri,'Myriad Pro','Segoe UI',Arial,sans-serif" font-size="78" fill="#3b2220">Serviços Contábeis</text>
+</svg>

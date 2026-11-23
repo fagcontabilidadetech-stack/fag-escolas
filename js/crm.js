@@ -25,7 +25,7 @@ $("#lPin").addEventListener("keydown", e => { if (e.key === "Enter") $("#btLogin
 $("#btLogin").onclick = async () => {
   $("#lErr").textContent = ""; const em = $("#lEmail").value, pin = $("#lPin").value;
   if (!pinOk(pin)) return $("#lErr").textContent = "O PIN tem 6 números.";
-  try { await S.api.auth.login(em, pin); } catch (e){ $("#lErr").textContent = /confirm/i.test(e.message) ? "Confirme seu e-mail antes de entrar (veja a caixa de entrada)." : "E-mail ou PIN incorretos."; }
+  try { await S.api.auth.login(em, pin); } catch (e){ $("#lErr").textContent = /confirm/i.test(e.message) ? "Seu cadastro ainda não foi confirmado. Avise o gestor para liberar o acesso." : "E-mail ou PIN incorretos."; }
 };
 $("#btSignup").onclick = async () => {
   const nome = $("#sNome").value.trim(), em = $("#sEmail").value.trim().toLowerCase(), p = $("#sPin").value;
@@ -35,8 +35,12 @@ $("#btSignup").onclick = async () => {
   if (!pinOk(p)) return $("#sErr").textContent = "O PIN precisa ter 6 números.";
   if (p !== $("#sPin2").value) return $("#sErr").textContent = "Os PINs não conferem.";
   try { await S.api.auth.signup(nome, em, p); showForm("fLogin"); $("#lEmail").value = em;
-    $("#lErr").innerHTML = `<span style="color:var(--ok)">Acesso criado! ${S.api.demo ? "" : "Confirme pelo link enviado ao seu e-mail e "}aguarde o gestor liberar.</span>`; }
-  catch (e){ $("#sErr").textContent = e.message.includes("@fagcontabilidade") ? e.message : "Não foi possível criar: " + e.message; }
+    $("#lErr").innerHTML = `<span style="color:var(--ok)">Acesso criado! Agora é só aguardar o gestor liberar o seu usuário. Depois entre com este e-mail e o PIN que você criou.</span>`; }
+  catch (e){ const m = e.message || "";
+    $("#sErr").textContent = m.includes("@fagcontabilidade") ? m
+      : /rate limit|too many|seconds/i.test(m) ? "Muitos cadastros em pouco tempo. Aguarde alguns minutos e tente de novo, ou avise o gestor."
+      : /already registered|already been registered|exists/i.test(m) ? "Este e-mail já tem cadastro. Volte e entre com o seu PIN (ou use Esqueci meu PIN)."
+      : "Não foi possível criar: " + m; }
 };
 $("#btReset").onclick = async () => {
   const em = $("#rEmail").value.trim(); if (!em.endsWith("@fagcontabilidade.com.br")) return $("#rErr").textContent = "Use seu e-mail @fagcontabilidade.com.br.";

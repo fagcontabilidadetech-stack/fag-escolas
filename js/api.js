@@ -51,7 +51,8 @@ async function supabaseApi(){
     },
     files: {
       async upload(path, file){ chk(await sb.storage.from("arquivos").upload(path, file, { upsert: false })); return path; },
-      async url(path){ return chk(await sb.storage.from("arquivos").createSignedUrl(path, 600)).signedUrl; },
+      async url(path, download){ return chk(await sb.storage.from("arquivos").createSignedUrl(path, 600, download ? { download } : undefined)).signedUrl; },
+      async remove(path){ chk(await sb.storage.from("arquivos").remove([path])); },
     },
   };
   return api;
@@ -111,7 +112,7 @@ function demoApi(){
       async resetPin(){}, async setPin(){},
       onChange(cb){ cbs.push(cb); cb(user, "INITIAL"); },
     },
-    files: { async upload(path){ return path; }, async url(){ return "#"; } },
+    files: { async upload(path){ return path; }, async url(){ return "#"; }, async remove(){} },
   };
 
   // Versão em JavaScript das funções do portal (espelha o SQL)

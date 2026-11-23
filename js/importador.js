@@ -164,7 +164,11 @@ export function abrirImportador(S, done){
           rows.push({ escola_id: id, ano, elaboracao: r.dropdown_mkpdy69r || null, arquivo_status: canon(ST.ataArquivo, r.status), documentos_status: canon(ST.ataDocs, r.color_mkp024km),
             data_envio: date(r.data), pagamento: canon(ST.ataPag, r.color_mkp0z334), data_entrada_ata: date(r.date_mkp06gsp), data_entrada_termo: date(r.date_mkqxb5qh),
             valor_cartorio: num(r.numeric_mkp0kg83), arquivos: files(r.file_mkp0kx9a), monday_id: r._id }); }
-        await up("atas", dedupe(rows, r => r.escola_id + r.ano), "escola_id,ano"); }
+        await up("atas", dedupe(rows, r => r.escola_id + r.ano), "escola_id,ano");
+        // recibos do cartório vão para os Arquivos da escola
+        const arqs = rows.flatMap(r => (r.arquivos || []).map(a => ({ escola_id: r.escola_id, categoria: "Recibo de cartório", ano: r.ano,
+          descricao: `Recibo do cartório – ATA ${r.ano} (veio do monday)`, nome: a.nome, url: a.url, enviado_por: "monday" })));
+        await up("escola_arquivos", dedupe(arqs, a => a.escola_id + a.url), "escola_id,url"); }
 
       if (dados.tarefas){ log("Tarefas…"); const rows = dados.tarefas.map(r => {
           const st = canon(ST.tarefa, r.status); const n = r.short_textx415s3x0;

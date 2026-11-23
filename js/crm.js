@@ -141,7 +141,9 @@ async function pgPainel(c){
   ]);
   const ativas = S.escolas.filter(e => e.situacao === "ativa");
   const doMes = mens.filter(m => m.competencia === mesAtual);
-  const recebido = doMes.filter(m => m.status === "pago").reduce((a, m) => a + (+m.valor || 0), 0);
+  const fimMes = new Date(+hoje.slice(0, 4), +hoje.slice(5, 7), 1).toISOString().slice(0, 10);
+  const baixas = mens.filter(m => m.status === "pago" && m.data && m.data >= mesAtual && m.data < fimMes);
+  const recebido = baixas.reduce((a, m) => a + (+m.valor || 0) + (+m.cartorio || 0), 0);
   const previsto = doMes.reduce((a, m) => a + (+m.valor || 0), 0);
   const atraso = mens.filter(m => (m.status === "em_atraso" || m.status === "cobrado" || (m.status === "a_receber" && m.competencia < mesAtual)));
   const atrasoTot = atraso.reduce((a, m) => a + (+m.valor || 0), 0);
@@ -157,10 +159,11 @@ async function pgPainel(c){
   c.innerHTML = header(`Olá, ${esc(S.me.nome.split(" ")[0])}!`, `<span class="muted small">${new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}</span>`) + `
     <div class="kpis">
       ${k("Escolas ativas", ativas.length, `Grupo A ${ativas.filter(e => e.grupo === "A").length} · Grupo B ${ativas.filter(e => e.grupo === "B").length}`, "#/escolas")}
-      ${tem("mensalidades") ? k(`Recebido em ${compLabel(mesAtual).split("/")[0].toLowerCase()}`, brl(recebido), `de ${brl(previsto)} previstos`, "#/mensalidades") : ""}
+      ${tem("mensalidades") ? k(`Recebido em ${compLabel(mesAtual).split("/")[0].toLowerCase()}`, brl(recebido), `${baixas.length} baixa(s) com data no mês · competência do mês prevista: ${brl(previsto)}`, "#/mensalidades") : ""}
       ${tem("mensalidades") ? k("Em atraso", brl(atrasoTot), `${atraso.length} mensalidade(s) · ${Object.keys(porEscola).length} escola(s)`, "#/mensalidades") : ""}
       ${tem("tarefas") ? k("Tarefas abertas", abertas.length, `${vencidas.length} com prazo vencido · ${novasSol.length} solicitação(ões) nova(s)`, "#/tarefas") : ""}
-      ${tem("prestacoes") ? k(`Prestações ${ano} com problema`, problemas.length, "Parado ou com erro", "#/prestacoes") : ""}
+      ${tem("prestacoes") ? k(`PTRF ${ano} com problema`, problemas.filter(p => p.programa === "PTRF").length, "Parado ou com erro", "#/prestacoes") : ""}
+      ${tem("prestacoes") ? k(`PDDE ${ano} com problema`, problemas.filter(p => p.programa === "PDDE").length, `Parado ou com erro · Básico ${problemas.filter(p => p.programa === "PDDE" && p.referencia === "Básico").length} · Estrutura ${problemas.filter(p => p.programa === "PDDE" && p.referencia === "Estrutura").length} · Qualidade ${problemas.filter(p => p.programa === "PDDE" && p.referencia === "Qualidade").length}`, "#/prestacoes") : ""}
       ${tem("contratos") ? k(`Renovação ${S.cfg.ano}`, `${resp}/${contr.length}`, `responderam · ${apr} aprovada(s)`, "#/renovacao") : ""}
     </div>
     <div class="cols2">
@@ -253,7 +256,7 @@ async function fichaEscola(id, tab = "resumo"){
   const bg = document.createElement("div"); bg.className = "drawer-bg"; const d = document.createElement("div"); d.className = "drawer";
   document.body.append(bg, d); const close = () => { bg.remove(); d.remove(); }; bg.onclick = close;
   const tabs = [["resumo","Resumo"],["dados","Dados e acessos"],tem("contratos") && ["contratos","Contratos"],tem("mensalidades") && ["mensalidades","Mensalidades"],
-    tem("prestacoes") && ["prestacoes","Prestações"],(tem("contabil") || tem("atas")) && ["contabil","Contábil e ATA"],tem("tarefas") && ["tarefas","Tarefas"]].filter(Boolean);
+    tem("prestacoes") && ["prestacoes","Prestações"],(tem("contabil") || tem("atas")) && ["contabil","Contábil e ATA"],tem("tarefas") && ["tarefas","Tarefas"],(tem("escolas") || tem("contabil") || tem("atas")) && ["arquivos","Arquivos"]].filter(Boolean);
   d.innerHTML = `<div class="drawer-h"><div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><h2 style="margin:0">${esc(e.nome)}</h2>
       <div class="small muted">CNPJ ${esc(e.cnpj || "–")} · ID ${esc(e.codigo || "–")} · DRE ${esc(e.dre || "–")} · ${chip(ST.grupo, e.grupo, { cls: "mini" })} ${e.situacao !== "ativa" ? '<span class="tag">Ex-cliente</span>' : ""}</div></div>
       <button class="btn sec sm" id="fx">✕</button></div>
@@ -263,7 +266,7 @@ async function fichaEscola(id, tab = "resumo"){
   const fb = d.querySelector("#fb");
   async function show(t){
     fb.innerHTML = `<div class="muted">Carregando…</div>`;
-    try { await ({ resumo: fResumo, dados: fDados, contratos: fContratos, mensalidades: fMens, prestacoes: fPrest, contabil: fContabil, tarefas: fTarefas })[t](fb, e, () => show(t)); }
+    try { await ({ resumo: fResumo, dados: fDados, contratos: fContratos, mensalidades: fMens, prestacoes: fPrest, contabil: fContabil, tarefas: fTarefas, arquivos: fArquivos })[t](fb, e, () => show(t)); }
     catch (err){ fb.innerHTML = `<div class="notice bad">${esc(err.message)}</div>`; }
   }
   show(tab);
@@ -348,6 +351,68 @@ async function fTarefas(fb, e, again){
       <div class="small muted">${t.origem === "escola" ? "📩 Solicitação da escola · " : ""}${esc((t.responsaveis || []).join(", "))} ${t.prazo ? "· prazo " + fmtDate(t.prazo) : ""} ${t.visivel_escola ? "· visível no portal" : ""}</div></div>`).join("") || `<div class="card muted">Nenhuma tarefa.</div>`);
   fb.querySelector("#nt")?.addEventListener("click", () => abrirTarefa({ escola_id: e.id }, again));
   $$("[data-t]", fb).forEach(x => x.onclick = () => abrirTarefa(ts.find(t => t.id === x.dataset.t), again));
+}
+
+/* =============== ARQUIVOS DA ESCOLA =============== */
+const CATEGORIAS = ["Recibo de cartório", "ATA", "Estatuto", "Contrato", "Balancete", "Prestação de contas", "Extrato bancário", "Nota fiscal", "Documento da escola", "Outros"];
+const podeAnexar = () => edita("escolas") || edita("contabil") || edita("atas");
+const icone = n => /\.pdf$/i.test(n || "") ? "📕" : /\.(docx?|odt|rtf)$/i.test(n || "") ? "📘" : /\.(xlsx?|ods|csv)$/i.test(n || "") ? "📗" : /\.(jpe?g|png|gif|webp|heic|bmp)$/i.test(n || "") ? "🖼️" : "📄";
+const tamanho = b => !b ? "" : b > 1048576 ? (b / 1048576).toFixed(1).replace(".", ",") + " MB" : Math.max(1, Math.round(b / 1024)) + " KB";
+function anexarArquivo(escolaId, pre = {}, done){
+  const e = S.esc[escolaId];
+  const md = modal(`<h2>Anexar arquivo</h2><div class="small muted" style="margin:-4px 0 12px">${esc(e?.nome || "")}</div>
+    <div class="field"><label class="f">Arquivo (PDF, Word, Excel ou foto)</label><input class="in" id="af" type="file" accept=".pdf,.doc,.docx,.odt,.rtf,.xls,.xlsx,.ods,.csv,.jpg,.jpeg,.png,.webp,.heic,.gif,image/*"></div>
+    <div class="grid2"><div class="field"><label class="f">Tipo</label><select class="in" id="ac">${CATEGORIAS.map(c => `<option ${c === (pre.categoria || "Recibo de cartório") ? "selected" : ""}>${c}</option>`).join("")}</select></div>
+      <div class="field"><label class="f">Ano de referência</label><input class="in" id="aa" type="number" value="${pre.ano || thisYear()}"></div></div>
+    <div class="field"><label class="f">O que é este arquivo? *</label><input class="in" id="ad" maxlength="200" placeholder="Ex.: Recibo do cartório – registro da ATA de eleição 2025" value="${esc(pre.descricao || "")}"></div>
+    <div style="display:flex;gap:8px"><button class="btn" id="ok">Salvar arquivo</button><button class="btn sec" id="cx">Cancelar</button></div><div class="err" id="er"></div>`);
+  md.q("#cx").onclick = md.close;
+  md.q("#af").onchange = () => { const f = md.q("#af").files[0]; if (f && !md.q("#ad").value) md.q("#ad").value = f.name.replace(/\.[^.]+$/, ""); };
+  md.q("#ok").onclick = async () => {
+    const f = md.q("#af").files[0], desc = md.q("#ad").value.trim();
+    if (!f) return md.q("#er").textContent = "Escolha o arquivo.";
+    if (!desc) return md.q("#er").textContent = "Escreva o que é o arquivo.";
+    if (f.size > 45 * 1048576) return md.q("#er").textContent = "Arquivo muito grande (máximo 45 MB).";
+    md.q("#ok").disabled = true; md.q("#ok").textContent = "Enviando…";
+    try {
+      const path = `${escolaId}/${Date.now()}_${f.name.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w.\-]/g, "_")}`;
+      await S.api.files.upload(path, f);
+      await S.api.insert("escola_arquivos", { escola_id: escolaId, categoria: md.q("#ac").value, ano: +md.q("#aa").value || null, descricao: desc,
+        nome: f.name, path, tipo: f.type || null, tamanho: f.size, enviado_por: S.me.nome });
+      md.close(); toast("Arquivo salvo"); done?.();
+    } catch (err){ md.q("#er").textContent = "Não foi possível salvar: " + err.message; md.q("#ok").disabled = false; md.q("#ok").textContent = "Salvar arquivo"; }
+  };
+}
+async function abrirArquivo(a, baixar){
+  if (a.url) return window.open(a.url, "_blank", "noopener");
+  try { const u = await S.api.files.url(a.path, baixar ? a.nome : undefined); window.open(u, "_blank", "noopener"); } catch (err){ toast("Erro ao abrir: " + err.message); }
+}
+async function fArquivos(fb, e, again){
+  const arqs = await S.api.select("escola_arquivos", { eq: { escola_id: e.id }, order: ["criado_em", "desc"] });
+  const cats = [...new Set(arqs.map(a => a.categoria))].sort((a, b) => CATEGORIAS.indexOf(a) - CATEGORIAS.indexOf(b));
+  fb.innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">${podeAnexar() ? `<button class="btn" id="nArq">📎 Anexar arquivo</button>` : ""}
+      <input class="in" id="fq" placeholder="Buscar nos arquivos…" style="max-width:260px"><span class="small muted">${arqs.length} arquivo(s)</span></div>
+    <div id="lst">${cats.map(c => `<div class="card" style="padding:14px 18px" data-cat="${esc(c)}"><h3>${esc(c)} <span class="small muted">(${arqs.filter(a => a.categoria === c).length})</span></h3>
+      <ul class="list">${arqs.filter(a => a.categoria === c).map(a => `<li data-txt="${esc((a.descricao + " " + (a.nome || "") + " " + (a.ano || "")).toLowerCase())}"><span style="display:flex;gap:10px;align-items:flex-start">
+        <span style="font-size:20px">${a.url ? "🔗" : icone(a.nome)}</span><span><b>${esc(a.descricao)}</b><div class="small muted">${a.ano ? a.ano + " · " : ""}${esc(a.nome || "link externo")}${a.tamanho ? " · " + tamanho(a.tamanho) : ""} · ${esc(a.enviado_por || "")} · ${fmtDate(a.criado_em)}</div></span></span>
+        <span style="white-space:nowrap"><button class="btn sm sec" data-ab="${a.id}">Abrir</button>${a.path ? ` <button class="btn sm sec" data-dl="${a.id}">Baixar</button>` : ""}${podeAnexar() ? ` <button class="btn sm ghost" data-rm="${a.id}" title="Excluir">🗑</button>` : ""}</span></li>`).join("")}</ul></div>`).join("")
+      || `<div class="card muted">Nenhum arquivo ainda.${podeAnexar() ? " Clique em <b>Anexar arquivo</b> para salvar recibos, ATAs, contratos, fotos…" : ""}</div>`}</div>`;
+  fb.querySelector("#nArq")?.addEventListener("click", () => anexarArquivo(e.id, {}, again));
+  fb.querySelector("#fq").oninput = ev => { const q = ev.target.value.toLowerCase();
+    $$("#lst li", fb).forEach(li => li.style.display = li.dataset.txt.includes(q) ? "" : "none");
+    $$("#lst [data-cat]", fb).forEach(cd => cd.style.display = [...cd.querySelectorAll("li")].some(li => li.style.display !== "none") ? "" : "none"); };
+  $$("[data-ab]", fb).forEach(b => b.onclick = () => abrirArquivo(arqs.find(a => a.id === b.dataset.ab)));
+  $$("[data-dl]", fb).forEach(b => b.onclick = () => abrirArquivo(arqs.find(a => a.id === b.dataset.dl), true));
+  $$("[data-rm]", fb).forEach(b => b.onclick = async () => { const a = arqs.find(x => x.id === b.dataset.rm);
+    if (!confirm(`Excluir "${a.descricao}"? Esta ação não pode ser desfeita.`)) return;
+    try { if (a.path) await S.api.files.remove(a.path); await S.api.remove("escola_arquivos", { id: a.id }); audit("excluir_arquivo", "escola_arquivos", e.id, { descricao: a.descricao, nome: a.nome }); toast("Arquivo excluído"); again(); }
+    catch (err){ toast("Erro: " + err.message); } });
+}
+async function contarArquivos(){ try { const r = await S.api.select("escola_arquivos", { cols: "escola_id" }); const m = {}; r.forEach(x => m[x.escola_id] = (m[x.escola_id] || 0) + 1); return m; } catch { return {}; } }
+const subAnexo = (nArq, ano, cat) => r => `${podeAnexar() ? `<button class="btn ghost sm" style="padding:0 4px" data-anx="${r.escola_id}" data-ano="${ano}" data-cat="${cat}">📎 Anexar</button>` : ""}${nArq[r.escola_id] ? ` <a href="#" class="small" data-varq="${r.escola_id}">${nArq[r.escola_id]} arquivo(s)</a>` : ""}`;
+function ligarAnexos(el, recarregar){
+  $$("[data-anx]", el).forEach(b => b.onclick = ev => { ev.stopPropagation(); anexarArquivo(b.dataset.anx, { ano: +b.dataset.ano, categoria: b.dataset.cat }, recarregar); });
+  $$("[data-varq]", el).forEach(a => a.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); fichaEscola(a.dataset.varq, "arquivos"); });
 }
 
 /* =============== RENOVAÇÃO (proposta + contrato) =============== */
@@ -523,14 +588,16 @@ async function pgContabil(c, ano){
   ano = ano || thisYear();
   const bs = await S.api.select("balancetes", { eq: { ano } });
   const rows = bs.filter(b => S.esc[b.escola_id]).map(b => ({ ...b, _nome: escNome(b.escola_id) })).sort((a, b) => a._nome.localeCompare(b._nome));
+  const nArq = await contarArquivos();
   c.innerHTML = header("Contábil — balancetes e obrigações", `${anoSel("selAno", [thisYear() - 1, thisYear(), thisYear() + 1, ano], ano)} ${E ? `<button class="btn" id="btNovo">+ Criar ano para todas</button>` : ""}`) + `<div id="bd"></div>`;
   $("#selAno").onchange = () => pgContabil(c, +$("#selAno").value);
   const st = (k, l, d) => ({ key: k, label: l, type: "status", dict: d, width: 120, editable: E, clearable: true });
   new Board($("#bd"), { rows, team: S.team, groupLabel: () => `Balancete ${ano}`, groupBy: () => ano, searchText: r => r._nome,
-    columns: [{ key: "_nome", label: "Escola", type: "name", width: 250 }, { key: "responsaveis", label: "Responsável", type: "people", width: 100, editable: E },
+    columns: [{ key: "_nome", label: "Escola", type: "name", width: 250, sub: subAnexo(nArq, ano, "Balancete") }, { key: "responsaveis", label: "Responsável", type: "people", width: 100, editable: E },
       st("rep1", `1º Repasse`, ST.balancete), st("rep2", "2º Repasse", ST.balancete), st("rep3", "3º Repasse", ST.balancete), st("pdde", "PDDE", ST.balancete),
       st("ecd", "ECD", ST.obrigacao), st("ecf", "ECF", ST.obrigacao), { key: "obs", label: "Obs.", type: "text", width: 150, editable: E }],
-    onOpen: r => fichaEscola(r.escola_id, "contabil"), onEdit: (r, k, v) => S.api.update("balancetes", { id: r.id }, { [k]: v }) });
+    onOpen: r => fichaEscola(r.escola_id, "contabil"), onEdit: (r, k, v) => S.api.update("balancetes", { id: r.id }, { [k]: v }),
+    afterRender: el => ligarAnexos(el, () => pgContabil(c, ano)) });
   if ($("#btNovo")) $("#btNovo").onclick = () => criarParaTodas("balancetes", { ano }, null, () => ({ rep1: "Não iniciado", rep2: "Não iniciado", rep3: "Não iniciado", pdde: "Não iniciado" }), "escola_id,ano", () => pgContabil(c, ano));
 }
 async function pgAtas(c, ano){
@@ -538,20 +605,21 @@ async function pgAtas(c, ano){
   const all = await S.api.select("atas");
   const anos = [...new Set(all.map(a => a.ano))]; ano = ano || Math.max(...anos, thisYear() - 1);
   const rows = all.filter(a => a.ano === ano && S.esc[a.escola_id]).map(a => ({ ...a, _nome: escNome(a.escola_id) })).sort((a, b) => a._nome.localeCompare(b._nome));
+  const nArq = await contarArquivos();
   c.innerHTML = header("ATA Bienal", `${anoSel("selAno", [...anos, thisYear(), thisYear() + 1], ano)} ${E ? `<button class="btn" id="btNovo">+ Criar ano para todas</button>` : ""}`) + `<div id="bd"></div>`;
   $("#selAno").onchange = () => pgAtas(c, +$("#selAno").value);
   const quem = { FAG: ST.quem.FAG, ESCOLA: ST.quem.ESCOLA };
   new Board($("#bd"), { rows, groupBy: () => ano, groupLabel: () => `Escolas – ${ano}`, searchText: r => r._nome,
-    columns: [{ key: "_nome", label: "Escola", type: "name", width: 250 },
+    columns: [{ key: "_nome", label: "Escola", type: "name", width: 250, sub: subAnexo(nArq, ano, "Recibo de cartório") },
       { key: "elaboracao", label: "Elaboração", type: "status", dict: quem, width: 100, editable: E, clearable: true },
       { key: "arquivo_status", label: "Arquivo ATA", type: "status", dict: ST.ataArquivo, width: 130, editable: E, clearable: true },
       { key: "documentos_status", label: "Documentos", type: "status", dict: ST.ataDocs, width: 100, editable: E, clearable: true },
       { key: "data_envio", label: "Envio p/ escola", type: "date", width: 110, editable: E },
       { key: "pagamento", label: "Pagamento", type: "status", dict: ST.ataPag, width: 130, editable: E, clearable: true },
       { key: "data_entrada_ata", label: "Entrada ATA", type: "date", width: 105, editable: E }, { key: "data_entrada_termo", label: "Entrada termo", type: "date", width: 105, editable: E },
-      { key: "valor_cartorio", label: "Cartório", type: "money", width: 100, editable: E },
-      { key: "arq", label: "Recibo", type: "custom", width: 80, render: r => (r.arquivos || []).map(a => `<a href="${esc(a.url || "#")}" target="_blank" rel="noopener" title="${esc(a.nome)}">📎</a>`).join(" ") }],
-    onOpen: r => fichaEscola(r.escola_id, "contabil"), onEdit: (r, k, v) => S.api.update("atas", { id: r.id }, { [k]: v }) });
+      { key: "valor_cartorio", label: "Cartório", type: "money", width: 100, editable: E }],
+    onOpen: r => fichaEscola(r.escola_id, "contabil"), onEdit: (r, k, v) => S.api.update("atas", { id: r.id }, { [k]: v }),
+    afterRender: el => ligarAnexos(el, () => pgAtas(c, ano)) });
   if ($("#btNovo")) $("#btNovo").onclick = () => criarParaTodas("atas", { ano: thisYear() + 1 }, null, () => ({ arquivo_status: "Não recebido", documentos_status: "Não feito" }), "escola_id,ano", () => pgAtas(c));
 }
 

@@ -103,7 +103,7 @@ function demoApi(){
       async login(email, pin){ if (!/^\d{6}$/.test(pin)) throw new Error("Invalid login credentials");
         email = email.toLowerCase();
         user = { id: "demo-" + email, email, nome: email.split("@")[0], papel: /^colab/.test(email) ? "colaborador" : "master", ativo: true,
-                 modulos: /^colab/.test(email) ? ["escolas","contratos","prestacoes","contabil","atas","tarefas"] : [] };
+                 permissoes: /^colab/.test(email) ? { escolas: "ver", acessos: "ver", contratos: "ver", prestacoes: "editar", contabil: "ver", atas: "ver", tarefas: "editar" } : {} };
         if (!T("perfis").some(p => p.id === user.id)){ T("perfis").push(user); save(); }
         try { sessionStorage.setItem(K + "_u", JSON.stringify(user)); } catch {} cbs.forEach(f => f(user, "SIGNED_IN")); },
       async signup(nome, email){ T("perfis").push({ id: "demo-" + email, email, nome, papel: "colaborador", ativo: false, modulos: [] }); save(); },

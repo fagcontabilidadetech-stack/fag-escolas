@@ -6,7 +6,10 @@ import { abrirImportador } from "./importador.js";
 
 const S = { api: null, me: null, cfg: null, escolas: [], esc: {}, team: [], page: "painel", cache: {} };
 const isMaster = () => S.me?.papel === "master";
-const tem = m => isMaster() || (S.me?.modulos || []).includes(m);
+const perm = m => S.me?.permissoes?.[m] || ((S.me?.modulos || []).includes(m) ? "editar" : null);
+const tem = m => isMaster() || ["ver", "editar"].includes(perm(m));      // pode ver
+const edita = m => isMaster() || perm(m) === "editar";                   // pode alterar
+const PAPEIS = { master: "Gestor geral", lider: "Líder", assistente: "Assistente", colaborador: "Colaborador", gestor: "Líder" };
 const pinOk = p => /^\d{6}$/.test(p);
 const DICT_FORMA = Object.fromEntries(FORMAS.map((f, i) => [f, { label: f, color: ["#3560b5","#63b231","#f46e16","#7f5347"][i] }]));
 const PORTAL = () => location.href.replace(/crm\.html.*$/, "index.html").replace(/#.*$/, "");
@@ -90,7 +93,7 @@ const PAGES = [
 const pode = m => m === null || (m === "_master" ? isMaster() : tem(m));
 function renderNav(){
   $("#nav").innerHTML = PAGES.filter(p => pode(p[4])).map(([k, l, c, ic]) => `<a href="#/${k}" data-p="${k}"><span class="ic" style="background:${c}">${ic}</span>${l}<span class="badge hidden" id="bdg-${k}"></span></a>`).join("");
-  $("#me").innerHTML = `<b>${esc(S.me.nome)}</b><div class="muted small">${{ master: "Gestor geral", gestor: "Gestor", colaborador: "Colaborador" }[S.me.papel]}${S.api.demo ? " · demonstração" : ""}</div>
+  $("#me").innerHTML = `<b>${esc(S.me.nome)}</b><div class="muted small">${PAPEIS[S.me.papel] || S.me.papel}${S.api.demo ? " · demonstração" : ""}</div>
     <div style="display:flex;gap:6px;margin-top:8px"><button class="btn sm sec" id="btPin">Trocar PIN</button><button class="btn sm sec" id="btOut">Sair</button></div>`;
   $("#btOut").onclick = () => S.api.auth.logout();
   $("#btPin").onclick = trocarPin;
@@ -173,25 +176,26 @@ async function pgPainel(c){
 
 /* =============== ESCOLAS =============== */
 async function pgEscolas(c){
+  const E = edita("escolas");
   // login do SIG (só gestor geral); a senha só aparece ao clicar e fica registrada
-  const acc = isMaster() ? Object.fromEntries((await S.api.select("escolas_acessos", { cols: "escola_id,sig_login" }).catch(() => [])).map(a => [a.escola_id, a])) : {};
-  c.innerHTML = header("Escolas", tem("escolas") ? `<button class="btn" id="btNova">+ Nova escola</button>` : "") + `<div id="bd"></div>`;
+  const acc = tem("acessos") ? Object.fromEntries((await S.api.select("escolas_acessos", { cols: "escola_id,sig_login" }).catch(() => [])).map(a => [a.escola_id, a])) : {};
+  c.innerHTML = header("Escolas", E ? `<button class="btn" id="btNova">+ Nova escola</button>` : "") + `<div id="bd"></div>`;
   const b = new Board($("#bd"), {
     rows: S.escolas, team: S.team, groupBy: e => e.situacao === "ativa" ? "Ativas" : "Ex-clientes", groupColor: k => k === "Ativas" ? "#3560b5" : "#a9a9a9",
     searchText: e => [e.nome, e.cnpj, e.codigo, e.dre, ...(e.aliases || [])].join(" "),
     columns: [
       { key: "nome", label: "Escola", type: "name", width: 280, sub: e => `${esc(e.cnpj || "")}` },
-      { key: "codigo", label: "ID", type: "text", width: 70, editable: tem("escolas") },
-      { key: "dre", label: "DRE", type: "text", width: 60, editable: tem("escolas") },
-      { key: "grupo", label: "Grupo", type: "status", dict: ST.grupo, width: 80, editable: tem("escolas"), battery: true },
-      { key: "situacao", label: "Situação", type: "status", dict: { ativa: { label: "Ativa", color: "#63b231" }, "ex-cliente": { label: "Ex-cliente", color: "#a9a9a9" } }, width: 100, editable: tem("escolas"), battery: false },
+      { key: "codigo", label: "ID", type: "text", width: 70, editable: E },
+      { key: "dre", label: "DRE", type: "text", width: 60, editable: E },
+      { key: "grupo", label: "Grupo", type: "status", dict: ST.grupo, width: 80, editable: E, battery: true },
+      { key: "situacao", label: "Situação", type: "status", dict: { ativa: { label: "Ativa", color: "#63b231" }, "ex-cliente": { label: "Ex-cliente", color: "#a9a9a9" } }, width: 100, editable: E, battery: false },
       { key: "honorario", label: "Mensalidade", type: "money", width: 110, editable: isMaster() },
-      { key: "responsaveis", label: "Responsáveis", type: "people", width: 120, editable: tem("escolas") },
-      ...(isMaster() ? [
+      { key: "responsaveis", label: "Responsáveis", type: "people", width: 120, editable: E },
+      ...(tem("acessos") ? [
         { key: "sig_login", label: "SIG – login", type: "custom", width: 150, fget: e => acc[e.id]?.sig_login || "", render: e => acc[e.id]?.sig_login ? `<span class="mono">${esc(acc[e.id].sig_login)}</span> <button class="btn ghost sm" data-cpl="${e.id}" title="Copiar login">⧉</button>` : `<span class="muted small">–</span>` },
         { key: "sig_senha", label: "SIG – senha", type: "custom", width: 150, render: e => acc[e.id] ? `<span class="mono" data-pw="${e.id}">••••••</span> <button class="btn ghost sm" data-ver="${e.id}" title="Mostrar senha">👁</button>` : `<span class="muted small">–</span>` },
       ] : []),
-      { key: "procuracao_validade", label: "Procuração", type: "date", width: 100, editable: tem("escolas") },
+      { key: "procuracao_validade", label: "Procuração", type: "date", width: 100, editable: E },
       { key: "chave", label: "Chave do portal", type: "custom", width: 150, fget: e => e.chave || "", render: e => e.chave ? `<span class="mono">${fmtKey(e.chave)}</span> <button class="btn ghost sm" data-cp="${e.id}" title="Copiar mensagem com link">⧉</button>` : `<span class="muted small">sem chave</span>` },
     ],
     onOpen: e => fichaEscola(e.id),
@@ -272,9 +276,9 @@ async function fResumo(fb, e, again){
     <div class="card"><h3>Portal da escola</h3>
       ${e.chave ? `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="mono" style="font-size:22px;letter-spacing:3px">${fmtKey(e.chave)}</span>
         <button class="btn sm" id="cpL">Copiar mensagem com link</button><a class="btn sm sec" href="${linkEscola(e.chave)}" target="_blank" rel="noopener">Abrir portal</a>
-        ${tem("escolas") ? `<button class="btn sm sec" id="novaK">Gerar nova chave</button>` : ""}</div>
+        ${edita("escolas") ? `<button class="btn sm sec" id="novaK">Gerar nova chave</button>` : ""}</div>
         <div class="small muted" style="margin-top:6px">${esc(linkEscola(e.chave))}</div>`
-      : `<p class="muted">Esta escola ainda não tem chave.</p>${tem("escolas") ? `<button class="btn" id="novaK">Gerar chave e link</button>` : ""}`}
+      : `<p class="muted">Esta escola ainda não tem chave.</p>${edita("escolas") ? `<button class="btn" id="novaK">Gerar chave e link</button>` : ""}`}
     </div>
     <div class="kpis">
       <div class="kpi"><div class="l">Mensalidade vigente</div><div class="v">${brl(e.honorario)}</div><div class="s">Grupo ${e.grupo || "–"}</div></div>
@@ -290,20 +294,23 @@ async function fResumo(fb, e, again){
   });
 }
 async function fDados(fb, e, again){
-  fb.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between"><h3>Cadastro</h3>${tem("escolas") ? `<button class="btn sm" id="ed">Editar</button>` : ""}</div>
+  fb.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between"><h3>Cadastro</h3>${edita("escolas") ? `<button class="btn sm" id="ed">Editar</button>` : ""}</div>
     <table class="summary" style="width:100%">${[["Nome", e.nome], ["CNPJ", e.cnpj], ["CCM", e.ccm], ["ID interno", e.codigo], ["DRE", e.dre], ["E-mail", e.email], ["Telefone", e.telefone],
       ["Procuração até", fmtDate(e.procuracao_validade)], ["Grupo", e.grupo], ["Mensalidade vigente", brl(e.honorario)], ["Outros nomes", (e.aliases || []).join("; ")]]
       .map(([l, v]) => `<tr><td class="muted" style="width:180px;padding:5px 0">${l}</td><td>${esc(v || "–")}</td></tr>`).join("")}</table></div>
-    ${isMaster() ? `<div class="card"><h3>Acessos (SIG / Senha Web)</h3><p class="small muted">Só o gestor geral vê. Cada consulta fica registrada.</p>
+    ${tem("acessos") ? `<div class="card"><h3>Acessos (SIG / Senha Web)</h3><p class="small muted">${edita("acessos") ? "Você pode ver e alterar." : "Você pode ver."} Cada consulta fica registrada.</p>
       <div id="acc"><button class="btn sm sec" id="verAcc">Mostrar acessos</button></div></div>` : ""}`;
   fb.querySelector("#ed")?.addEventListener("click", () => editarEscola(e, again));
   fb.querySelector("#verAcc")?.addEventListener("click", async () => {
     const a = await S.api.rpc("ver_acessos", { p_escola: e.id }) || {};
-    const box = fb.querySelector("#acc");
-    box.innerHTML = `<div class="grid3"><div class="field"><label class="f">SIG – login</label><input class="in" id="a1" value="${esc(a.sig_login || "")}"></div>
-      <div class="field"><label class="f">SIG – senha</label><input class="in" id="a2" value="${esc(a.sig_senha || "")}"></div>
-      <div class="field"><label class="f">Senha Web</label><input class="in" id="a3" value="${esc(a.senha_web || "")}"></div></div><button class="btn sm" id="svA">Salvar acessos</button>`;
-    box.querySelector("#svA").onclick = async () => { await S.api.upsert("escolas_acessos", [{ escola_id: e.id, sig_login: box.querySelector("#a1").value || null, sig_senha: box.querySelector("#a2").value || null, senha_web: box.querySelector("#a3").value || null }], "escola_id"); audit("editar_senha", "escolas_acessos", e.id); toast("Acessos salvos"); };
+    const box = fb.querySelector("#acc"); const ro = edita("acessos") ? "" : "readonly";
+    box.innerHTML = `<div class="grid3"><div class="field"><label class="f">SIG – login</label><input class="in" id="a1" ${ro} value="${esc(a.sig_login || "")}"></div>
+      <div class="field"><label class="f">SIG – senha</label><input class="in" id="a2" ${ro} value="${esc(a.sig_senha || "")}"></div>
+      <div class="field"><label class="f">Senha Web</label><input class="in" id="a3" ${ro} value="${esc(a.senha_web || "")}"></div></div>
+      ${edita("acessos") ? `<button class="btn sm" id="svA">Salvar acessos</button>` : ""}`;
+    box.querySelector("#svA")?.addEventListener("click", async () => {
+      try { await S.api.upsert("escolas_acessos", [{ escola_id: e.id, sig_login: box.querySelector("#a1").value || null, sig_senha: box.querySelector("#a2").value || null, senha_web: box.querySelector("#a3").value || null }], "escola_id");
+        audit("editar_senha", "escolas_acessos", e.id); toast("Acessos salvos"); } catch (err){ toast("Erro: " + err.message); } });
   });
 }
 async function fContratos(fb, e){
@@ -336,15 +343,16 @@ async function fContabil(fb, e){
 }
 async function fTarefas(fb, e, again){
   const ts = await S.api.select("tarefas", { eq: { escola_id: e.id }, order: ["criado_em", "desc"] });
-  fb.innerHTML = `<div style="margin-bottom:10px"><button class="btn sm" id="nt">+ Nova tarefa para esta escola</button></div>` +
+  fb.innerHTML = (edita("tarefas") ? `<div style="margin-bottom:10px"><button class="btn sm" id="nt">+ Nova tarefa para esta escola</button></div>` : "") +
     (ts.map(t => `<div class="card" style="padding:12px 16px;cursor:pointer" data-t="${t.id}"><div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(t.titulo)}</b>${chip(ST.tarefa, t.status, { cls: "mini" })}</div>
       <div class="small muted">${t.origem === "escola" ? "📩 Solicitação da escola · " : ""}${esc((t.responsaveis || []).join(", "))} ${t.prazo ? "· prazo " + fmtDate(t.prazo) : ""} ${t.visivel_escola ? "· visível no portal" : ""}</div></div>`).join("") || `<div class="card muted">Nenhuma tarefa.</div>`);
-  fb.querySelector("#nt").onclick = () => abrirTarefa({ escola_id: e.id }, again);
+  fb.querySelector("#nt")?.addEventListener("click", () => abrirTarefa({ escola_id: e.id }, again));
   $$("[data-t]", fb).forEach(x => x.onclick = () => abrirTarefa(ts.find(t => t.id === x.dataset.t), again));
 }
 
 /* =============== RENOVAÇÃO (proposta + contrato) =============== */
 async function pgRenovacao(c){
+  const E = edita("contratos");
   const ano = S.cfg.ano;
   const [cs, priv] = await Promise.all([S.api.select("contratos", { eq: { ano } }), isMaster() ? S.api.select("contratos_privado") : []]);
   const pv = Object.fromEntries(priv.map(p => [p.contrato_id, p]));
@@ -371,7 +379,7 @@ async function pgRenovacao(c){
       { key: "honorario", label: `Base ${ano}`, type: "money", width: 110, editable: isMaster() },
       { key: "pacote", label: "Pacote escolhido", type: "custom", width: 150, fget: r => r.proposta_status === "pendente" ? "" : ["ata","scan","guia"].filter(k => r[k] && (k !== "scan" || r._grupo === "B")).map(k => ({ ata: "ATA", scan: "Escaneamento", guia: "Guias" })[k]).join(", "), render: r => r.proposta_status === "pendente" ? "" : ["ata","scan","guia"].filter(k => r[k] && (k !== "scan" || r._grupo === "B")).map(k => `<span class="tag">${{ ata: "ATA", scan: "Escan.", guia: "Guias" }[k]}</span>`).join("") || `<span class="muted small">nenhum</span>` },
       { key: "_total", label: "Total c/ pacote", type: "money", width: 120 },
-      { key: "status", label: "Contrato", type: "status", dict: ST.contrato, width: 130, editable: tem("contratos") },
+      { key: "status", label: "Contrato", type: "status", dict: ST.contrato, width: 130, editable: E },
       { key: "acoes", label: "", type: "custom", width: 160, render: r => `${r.proposta_status !== "pendente" ? `<button class="btn sm" data-an="${r.id}">${isMaster() && r.proposta_status === "enviada" ? "Analisar" : "Ver"}</button>` : ""} ${S.esc[r.escola_id]?.chave ? `<a class="btn sm sec" href="${linkEscola(S.esc[r.escola_id].chave)}" target="_blank" rel="noopener">Preencher</a>` : ""}` },
     ],
     onOpen: r => fichaEscola(r.escola_id, "contratos"),
@@ -412,6 +420,7 @@ function writeX(X, rows, sheet, fname){ const ws = X.utils.json_to_sheet(rows); 
 
 /* =============== MENSALIDADES =============== */
 async function pgMensalidades(c, ano){
+  const E = edita("mensalidades");
   ano = ano || +($("#selAno")?.value) || thisYear();
   const ms = await S.api.select("mensalidades", { gte: { competencia: `${ano}-01-01` }, lte: { competencia: `${ano}-12-01` } });
   const rows = ms.filter(m => S.esc[m.escola_id]).map(m => ({ ...m, _nome: escNome(m.escola_id) })).sort((a, b) => a._nome.localeCompare(b._nome));
@@ -419,7 +428,7 @@ async function pgMensalidades(c, ano){
   const pago = rows.filter(r => r.status === "pago").reduce((a, r) => a + (+r.valor || 0), 0), tot = rows.reduce((a, r) => a + (+r.valor || 0), 0);
   const hojeComp = today().slice(0, 7) + "-01";
   const atr = rows.filter(r => r.status === "em_atraso" || r.status === "cobrado" || (r.status === "a_receber" && r.competencia < hojeComp));
-  c.innerHTML = header("Mensalidades", `${anoSel("selAno", anos, ano)} <button class="btn" id="btGerar">Gerar mensalidades</button>`) + `
+  c.innerHTML = header("Mensalidades", `${anoSel("selAno", anos, ano)} ${E ? `<button class="btn" id="btGerar">Gerar mensalidades</button>` : ""}`) + `
     <div class="kpis"><div class="kpi"><div class="l">Previsto ${ano}</div><div class="v">${brl(tot)}</div><div class="s">${rows.length} lançamentos</div></div>
       <div class="kpi"><div class="l">Recebido</div><div class="v">${brl(pago)}</div><div class="s">${tot ? Math.round(pago / tot * 100) : 0}% do previsto</div></div>
       <div class="kpi"><div class="l">Em atraso</div><div class="v" style="color:var(--bad)">${brl(atr.reduce((a, r) => a + (+r.valor || 0), 0))}</div><div class="s">${atr.length} mensalidade(s)</div></div>
@@ -433,19 +442,19 @@ async function pgMensalidades(c, ano){
     searchText: r => r._nome,
     columns: [
       { key: "_nome", label: "Escola", type: "name", width: 260 },
-      { key: "responsaveis", label: "Responsável", type: "people", width: 100, editable: true },
-      { key: "ata", label: "ATA", type: "check", width: 50, editable: true }, { key: "esc", label: "Esc", type: "check", width: 50, editable: true }, { key: "guia", label: "Guia", type: "check", width: 50, editable: true },
-      { key: "cartorio", label: "Cartório", type: "money", width: 90, editable: true },
-      { key: "forma", label: "Forma", type: "status", dict: DICT_FORMA, width: 100, editable: true, clearable: true, battery: false },
-      { key: "valor", label: "Valor", type: "money", width: 100, editable: true },
-      { key: "status", label: "Status", type: "status", dict: ST.mensalidade, width: 120, editable: true },
-      { key: "data", label: "Data", type: "date", width: 100, editable: true },
-      { key: "obs", label: "Obs.", type: "text", width: 160, editable: true },
+      { key: "responsaveis", label: "Responsável", type: "people", width: 100, editable: E },
+      { key: "ata", label: "ATA", type: "check", width: 50, editable: E }, { key: "esc", label: "Esc", type: "check", width: 50, editable: E }, { key: "guia", label: "Guia", type: "check", width: 50, editable: E },
+      { key: "cartorio", label: "Cartório", type: "money", width: 90, editable: E },
+      { key: "forma", label: "Forma", type: "status", dict: DICT_FORMA, width: 100, editable: E, clearable: true, battery: false },
+      { key: "valor", label: "Valor", type: "money", width: 100, editable: E },
+      { key: "status", label: "Status", type: "status", dict: ST.mensalidade, width: 120, editable: E },
+      { key: "data", label: "Data", type: "date", width: 100, editable: E },
+      { key: "obs", label: "Obs.", type: "text", width: 160, editable: E },
     ],
     onOpen: r => fichaEscola(r.escola_id, "mensalidades"),
     onEdit: async (r, key, v) => { const p = { [key]: v }; if (key === "status" && v === "pago" && !r.data){ p.data = today(); r.data = p.data; } await S.api.update("mensalidades", { id: r.id }, p); },
   });
-  $("#btGerar").onclick = () => gerarMensalidades(ano, () => pgMensalidades(c, ano));
+  if ($("#btGerar")) $("#btGerar").onclick = () => gerarMensalidades(ano, () => pgMensalidades(c, ano));
 }
 function gerarMensalidades(anoAtual, done){
   const md = modal(`<h2>Gerar mensalidades</h2><p class="small muted">Cria os 12 meses de cada escola ativa. Mensalidades que já existem não são alteradas.</p>
@@ -471,31 +480,32 @@ function gerarMensalidades(anoAtual, done){
 
 /* =============== PRESTAÇÕES =============== */
 async function pgPrestacoes(c, prog, ano){
+  const E = edita("prestacoes");
   prog = prog || "PTRF"; ano = ano || thisYear();
   const ps = await S.api.select("prestacoes", { eq: { programa: prog, ano } });
   const rows = ps.filter(p => S.esc[p.escola_id]).map(p => ({ ...p, _nome: escNome(p.escola_id) })).sort((a, b) => a._nome.localeCompare(b._nome));
   c.innerHTML = header("Prestações de contas", `<div class="tabs">${["PTRF","PDDE"].map(p => `<button class="tab ${p === prog ? "on" : ""}" data-pg="${p}">${p}</button>`).join("")}</div>
-    ${anoSel("selAno", [thisYear() - 1, thisYear(), thisYear() + 1, ano], ano)} <button class="btn" id="btNovo">+ Criar para todas as escolas</button>`) + `<div id="bd"></div>`;
+    ${anoSel("selAno", [thisYear() - 1, thisYear(), thisYear() + 1, ano], ano)} ${E ? `<button class="btn" id="btNovo">+ Criar para todas as escolas</button>` : ""}`) + `<div id="bd"></div>`;
   $$("[data-pg]", c).forEach(b => b.onclick = () => pgPrestacoes(c, b.dataset.pg, ano));
   $("#selAno").onchange = () => pgPrestacoes(c, prog, +$("#selAno").value);
-  const base = [{ key: "_nome", label: "Escola", type: "name", width: 250 }, { key: "responsaveis", label: "Responsável", type: "people", width: 100, editable: true }];
+  const base = [{ key: "_nome", label: "Escola", type: "name", width: 250 }, { key: "responsaveis", label: "Responsável", type: "people", width: 100, editable: E }];
   const cols = prog === "PTRF" ? [...base,
-      { key: "quem_presta", label: "Prestação", type: "status", dict: ST.quem, width: 110, editable: true, clearable: true },
-      { key: "status", label: "Status", type: "status", dict: ST.prestacao, width: 130, editable: true },
-      { key: "prioridade", label: "Prioridade", type: "text", width: 90, editable: true },
-      { key: "inicio", label: "Início", type: "date", width: 100, editable: true }, { key: "prazo", label: "Prazo", type: "date", width: 100, editable: true },
-      { key: "entregue_em", label: "Entregue em", type: "date", width: 100, editable: true }, { key: "obs", label: "Obs.", type: "text", width: 160, editable: true }]
-    : [...base, { key: "status", label: "Status", type: "status", dict: ST.prestacao, width: 130, editable: true },
-      ...MESES.map(mm => ({ key: "m_" + mm, label: mm, type: "status", dict: ST.mes, width: 46, editable: true, clearable: true, battery: false,
+      { key: "quem_presta", label: "Prestação", type: "status", dict: ST.quem, width: 110, editable: E, clearable: true },
+      { key: "status", label: "Status", type: "status", dict: ST.prestacao, width: 130, editable: E },
+      { key: "prioridade", label: "Prioridade", type: "text", width: 90, editable: E },
+      { key: "inicio", label: "Início", type: "date", width: 100, editable: E }, { key: "prazo", label: "Prazo", type: "date", width: 100, editable: E },
+      { key: "entregue_em", label: "Entregue em", type: "date", width: 100, editable: E }, { key: "obs", label: "Obs.", type: "text", width: 160, editable: E }]
+    : [...base, { key: "status", label: "Status", type: "status", dict: ST.prestacao, width: 130, editable: E },
+      ...MESES.map(mm => ({ key: "m_" + mm, label: mm, type: "status", dict: ST.mes, width: 46, editable: E, clearable: true, battery: false,
         get: r => r.meses?.[mm] || null, set: (r, v) => { r.meses = { ...(r.meses || {}) }; if (v) r.meses[mm] = v; else delete r.meses[mm]; } })),
-      { key: "obs", label: "Obs.", type: "text", width: 160, editable: true }];
+      { key: "obs", label: "Obs.", type: "text", width: 160, editable: E }];
   new Board($("#bd"), {
     rows, team: S.team, groupBy: r => r.referencia, groupLabel: k => `${prog} ${ano} – ${k}`, searchText: r => r._nome, columns: cols,
     onOpen: r => fichaEscola(r.escola_id, "prestacoes"),
     onEdit: async (r, key, v) => { const p = key.startsWith("m_") ? { meses: r.meses } : { [key]: v }; if (key === "status" && v === "Entregue" && !r.entregue_em){ p.entregue_em = today(); r.entregue_em = p.entregue_em; } await S.api.update("prestacoes", { id: r.id }, p); },
     afterRender: el => { if (prog === "PDDE") el.querySelectorAll("table.bd .chip").forEach(ch => { if (ch.textContent.length > 12){ ch.classList.add("mini"); } }); },
   });
-  $("#btNovo").onclick = () => criarParaTodas("prestacoes", { programa: prog, ano }, prog === "PTRF" ? "Referência (ex.: 3º Repasse)" : "Referência (Básico, Estrutura, Qualidade…)", ref => ({ referencia: ref, status: "Não iniciado" }), "escola_id,ano,programa,referencia", () => pgPrestacoes(c, prog, ano));
+  if ($("#btNovo")) $("#btNovo").onclick = () => criarParaTodas("prestacoes", { programa: prog, ano }, prog === "PTRF" ? "Referência (ex.: 3º Repasse)" : "Referência (Básico, Estrutura, Qualidade…)", ref => ({ referencia: ref, status: "Não iniciado" }), "escola_id,ano,programa,referencia", () => pgPrestacoes(c, prog, ano));
 }
 function criarParaTodas(tabela, fixos, pergunta, extra, conflict, done){
   const md = modal(`<h2>Criar para todas as escolas ativas</h2>${pergunta ? `<div class="field"><label class="f">${pergunta}</label><input class="in" id="ref"></div>` : ""}
@@ -509,43 +519,46 @@ function criarParaTodas(tabela, fixos, pergunta, extra, conflict, done){
 
 /* =============== CONTÁBIL / ATA =============== */
 async function pgContabil(c, ano){
+  const E = edita("contabil");
   ano = ano || thisYear();
   const bs = await S.api.select("balancetes", { eq: { ano } });
   const rows = bs.filter(b => S.esc[b.escola_id]).map(b => ({ ...b, _nome: escNome(b.escola_id) })).sort((a, b) => a._nome.localeCompare(b._nome));
-  c.innerHTML = header("Contábil — balancetes e obrigações", `${anoSel("selAno", [thisYear() - 1, thisYear(), thisYear() + 1, ano], ano)} <button class="btn" id="btNovo">+ Criar ano para todas</button>`) + `<div id="bd"></div>`;
+  c.innerHTML = header("Contábil — balancetes e obrigações", `${anoSel("selAno", [thisYear() - 1, thisYear(), thisYear() + 1, ano], ano)} ${E ? `<button class="btn" id="btNovo">+ Criar ano para todas</button>` : ""}`) + `<div id="bd"></div>`;
   $("#selAno").onchange = () => pgContabil(c, +$("#selAno").value);
-  const st = (k, l, d) => ({ key: k, label: l, type: "status", dict: d, width: 120, editable: true, clearable: true });
+  const st = (k, l, d) => ({ key: k, label: l, type: "status", dict: d, width: 120, editable: E, clearable: true });
   new Board($("#bd"), { rows, team: S.team, groupLabel: () => `Balancete ${ano}`, groupBy: () => ano, searchText: r => r._nome,
-    columns: [{ key: "_nome", label: "Escola", type: "name", width: 250 }, { key: "responsaveis", label: "Responsável", type: "people", width: 100, editable: true },
+    columns: [{ key: "_nome", label: "Escola", type: "name", width: 250 }, { key: "responsaveis", label: "Responsável", type: "people", width: 100, editable: E },
       st("rep1", `1º Repasse`, ST.balancete), st("rep2", "2º Repasse", ST.balancete), st("rep3", "3º Repasse", ST.balancete), st("pdde", "PDDE", ST.balancete),
-      st("ecd", "ECD", ST.obrigacao), st("ecf", "ECF", ST.obrigacao), { key: "obs", label: "Obs.", type: "text", width: 150, editable: true }],
+      st("ecd", "ECD", ST.obrigacao), st("ecf", "ECF", ST.obrigacao), { key: "obs", label: "Obs.", type: "text", width: 150, editable: E }],
     onOpen: r => fichaEscola(r.escola_id, "contabil"), onEdit: (r, k, v) => S.api.update("balancetes", { id: r.id }, { [k]: v }) });
-  $("#btNovo").onclick = () => criarParaTodas("balancetes", { ano }, null, () => ({ rep1: "Não iniciado", rep2: "Não iniciado", rep3: "Não iniciado", pdde: "Não iniciado" }), "escola_id,ano", () => pgContabil(c, ano));
+  if ($("#btNovo")) $("#btNovo").onclick = () => criarParaTodas("balancetes", { ano }, null, () => ({ rep1: "Não iniciado", rep2: "Não iniciado", rep3: "Não iniciado", pdde: "Não iniciado" }), "escola_id,ano", () => pgContabil(c, ano));
 }
 async function pgAtas(c, ano){
+  const E = edita("atas");
   const all = await S.api.select("atas");
   const anos = [...new Set(all.map(a => a.ano))]; ano = ano || Math.max(...anos, thisYear() - 1);
   const rows = all.filter(a => a.ano === ano && S.esc[a.escola_id]).map(a => ({ ...a, _nome: escNome(a.escola_id) })).sort((a, b) => a._nome.localeCompare(b._nome));
-  c.innerHTML = header("ATA Bienal", `${anoSel("selAno", [...anos, thisYear(), thisYear() + 1], ano)} <button class="btn" id="btNovo">+ Criar ano para todas</button>`) + `<div id="bd"></div>`;
+  c.innerHTML = header("ATA Bienal", `${anoSel("selAno", [...anos, thisYear(), thisYear() + 1], ano)} ${E ? `<button class="btn" id="btNovo">+ Criar ano para todas</button>` : ""}`) + `<div id="bd"></div>`;
   $("#selAno").onchange = () => pgAtas(c, +$("#selAno").value);
   const quem = { FAG: ST.quem.FAG, ESCOLA: ST.quem.ESCOLA };
   new Board($("#bd"), { rows, groupBy: () => ano, groupLabel: () => `Escolas – ${ano}`, searchText: r => r._nome,
     columns: [{ key: "_nome", label: "Escola", type: "name", width: 250 },
-      { key: "elaboracao", label: "Elaboração", type: "status", dict: quem, width: 100, editable: true, clearable: true },
-      { key: "arquivo_status", label: "Arquivo ATA", type: "status", dict: ST.ataArquivo, width: 130, editable: true, clearable: true },
-      { key: "documentos_status", label: "Documentos", type: "status", dict: ST.ataDocs, width: 100, editable: true, clearable: true },
-      { key: "data_envio", label: "Envio p/ escola", type: "date", width: 110, editable: true },
-      { key: "pagamento", label: "Pagamento", type: "status", dict: ST.ataPag, width: 130, editable: true, clearable: true },
-      { key: "data_entrada_ata", label: "Entrada ATA", type: "date", width: 105, editable: true }, { key: "data_entrada_termo", label: "Entrada termo", type: "date", width: 105, editable: true },
-      { key: "valor_cartorio", label: "Cartório", type: "money", width: 100, editable: true },
+      { key: "elaboracao", label: "Elaboração", type: "status", dict: quem, width: 100, editable: E, clearable: true },
+      { key: "arquivo_status", label: "Arquivo ATA", type: "status", dict: ST.ataArquivo, width: 130, editable: E, clearable: true },
+      { key: "documentos_status", label: "Documentos", type: "status", dict: ST.ataDocs, width: 100, editable: E, clearable: true },
+      { key: "data_envio", label: "Envio p/ escola", type: "date", width: 110, editable: E },
+      { key: "pagamento", label: "Pagamento", type: "status", dict: ST.ataPag, width: 130, editable: E, clearable: true },
+      { key: "data_entrada_ata", label: "Entrada ATA", type: "date", width: 105, editable: E }, { key: "data_entrada_termo", label: "Entrada termo", type: "date", width: 105, editable: E },
+      { key: "valor_cartorio", label: "Cartório", type: "money", width: 100, editable: E },
       { key: "arq", label: "Recibo", type: "custom", width: 80, render: r => (r.arquivos || []).map(a => `<a href="${esc(a.url || "#")}" target="_blank" rel="noopener" title="${esc(a.nome)}">📎</a>`).join(" ") }],
     onOpen: r => fichaEscola(r.escola_id, "contabil"), onEdit: (r, k, v) => S.api.update("atas", { id: r.id }, { [k]: v }) });
-  $("#btNovo").onclick = () => criarParaTodas("atas", { ano: thisYear() + 1 }, null, () => ({ arquivo_status: "Não recebido", documentos_status: "Não feito" }), "escola_id,ano", () => pgAtas(c));
+  if ($("#btNovo")) $("#btNovo").onclick = () => criarParaTodas("atas", { ano: thisYear() + 1 }, null, () => ({ arquivo_status: "Não recebido", documentos_status: "Não feito" }), "escola_id,ano", () => pgAtas(c));
 }
 
 /* =============== TAREFAS E SOLICITAÇÕES =============== */
 let vistaTarefas = "tabela";
 async function pgTarefas(c){
+  const E = edita("tarefas");
   const ts = await S.api.select("tarefas", { order: ["criado_em", "desc"] });
   const rows = ts.map(t => ({ ...t, _escola: t.escola_id ? escNome(t.escola_id) : "FAG / geral" }));
   const f = pgTarefas.f ||= { origem: "", resp: "" };
@@ -553,25 +566,25 @@ async function pgTarefas(c){
   c.innerHTML = header("Tarefas e solicitações", `<div class="tabs"><button class="tab ${vistaTarefas === "tabela" ? "on" : ""}" data-v="tabela">Tabela</button><button class="tab ${vistaTarefas === "kanban" ? "on" : ""}" data-v="kanban">Kanban</button></div>
     <select class="in" id="fO" style="width:auto"><option value="">Todas as origens</option><option value="escola" ${f.origem === "escola" ? "selected" : ""}>Solicitações das escolas</option><option value="interna" ${f.origem === "interna" ? "selected" : ""}>Internas</option></select>
     <select class="in" id="fR" style="width:auto"><option value="">Todos os responsáveis</option>${S.team.map(n => `<option ${f.resp === n ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
-    <button class="btn" id="btNova">+ Nova tarefa</button>`) + `<div id="bd"></div>`;
+    ${E ? `<button class="btn" id="btNova">+ Nova tarefa</button>` : ""}`) + `<div id="bd"></div>`;
   $$("[data-v]", c).forEach(b => b.onclick = () => { vistaTarefas = b.dataset.v; pgTarefas(c); });
   $("#fO").onchange = e => { f.origem = e.target.value; pgTarefas(c); }; $("#fR").onchange = e => { f.resp = e.target.value; pgTarefas(c); };
-  $("#btNova").onclick = () => abrirTarefa({}, () => pgTarefas(c));
+  if ($("#btNova")) $("#btNova").onclick = () => abrirTarefa({}, () => pgTarefas(c));
   const order = Object.keys(ST.tarefa);
   if (vistaTarefas === "kanban"){
     kanban($("#bd"), { rows: fil, dict: ST.tarefa, card: t => `<b>${esc(t.titulo)}</b><div class="small muted">${t.origem === "escola" ? "📩 " : ""}${esc(t._escola)}</div><div class="small">${(t.responsaveis || []).map(esc).join(", ")} ${t.prazo ? `<span style="${t.prazo < today() && t.status !== "concluida" ? "color:var(--bad)" : ""}">· ${fmtDate(t.prazo)}</span>` : ""}</div>`,
-      onMove: async (t, st) => { await S.api.update("tarefas", { id: t.id }, { status: st, concluido_em: st === "concluida" ? new Date().toISOString() : null }); pgTarefas(c); atualizarBadges(); },
+      onMove: async (t, st) => { if (!E) return toast("Você tem acesso só para ver as tarefas."); await S.api.update("tarefas", { id: t.id }, { status: st, concluido_em: st === "concluida" ? new Date().toISOString() : null }); pgTarefas(c); atualizarBadges(); },
       onOpen: t => abrirTarefa(t, () => pgTarefas(c)) });
     return;
   }
   new Board($("#bd"), { rows: fil, team: S.team, groupBy: r => r.status, groupOrder: (a, b) => order.indexOf(a) - order.indexOf(b), groupLabel: k => ST.tarefa[k]?.label, groupColor: k => ST.tarefa[k]?.color,
     collapsed: new Set(["concluida"]), searchText: r => r.titulo + " " + r._escola,
     columns: [{ key: "titulo", label: "Tarefa", type: "name", width: 280, sub: r => r.origem === "escola" ? `<span class="tag" style="background:#fff3cf">📩 Solicitação da escola</span>` : "" },
-      { key: "_escola", label: "Escola", type: "text", width: 200 }, { key: "verba", label: "Verba", type: "text", width: 110, editable: true },
-      { key: "responsaveis", label: "Responsável", type: "people", width: 100, editable: true },
-      { key: "status", label: "Status", type: "status", dict: ST.tarefa, width: 120, editable: true },
-      { key: "prazo", label: "Prazo", type: "date", width: 100, editable: true },
-      { key: "visivel_escola", label: "No portal", type: "check", width: 70, editable: r => !!r.escola_id }],
+      { key: "_escola", label: "Escola", type: "text", width: 200 }, { key: "verba", label: "Verba", type: "text", width: 110, editable: E },
+      { key: "responsaveis", label: "Responsável", type: "people", width: 100, editable: E },
+      { key: "status", label: "Status", type: "status", dict: ST.tarefa, width: 120, editable: E },
+      { key: "prazo", label: "Prazo", type: "date", width: 100, editable: E },
+      { key: "visivel_escola", label: "No portal", type: "check", width: 70, editable: r => E && !!r.escola_id }],
     onOpen: r => abrirTarefa(r, () => pgTarefas(c)),
     onEdit: async (r, k, v) => { const p = { [k]: v }; if (k === "status") p.concluido_em = v === "concluida" ? new Date().toISOString() : null; await S.api.update("tarefas", { id: r.id }, p); if (k === "status") atualizarBadges(); } });
 }
@@ -590,13 +603,13 @@ async function abrirTarefa(t, done){
     <label style="display:flex;gap:8px;font-size:14px;margin-bottom:10px"><input type="checkbox" id="tvis" ${t.visivel_escola ? "checked" : ""}> Mostrar no portal da escola (vira pendência / conversa com a escola)</label>
     ${(t.arquivos || []).length ? `<div class="small" style="margin-bottom:8px">${t.arquivos.map(a => `<a href="${esc(a.url || "#")}" target="_blank" rel="noopener" data-path="${esc(a.path || "")}">📎 ${esc(a.nome)}</a>`).join(" · ")}</div>` : ""}
     ${!nova ? `<div class="field"><label class="f">Anexar arquivo</label><input type="file" id="tf"></div>` : ""}
-    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="ok">Salvar</button><button class="btn sec" id="cx">Fechar</button>${!nova && isMaster() ? `<span style="flex:1"></span><button class="btn bad sm" id="del">Excluir</button>` : ""}</div><div class="err" id="er"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${edita("tarefas") ? `<button class="btn" id="ok">Salvar</button>` : `<span class="small muted">Você tem acesso só para ver.</span>`}<button class="btn sec" id="cx">Fechar</button>${!nova && isMaster() ? `<span style="flex:1"></span><button class="btn bad sm" id="del">Excluir</button>` : ""}</div><div class="err" id="er"></div>
     ${!nova ? `<hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><h3>Conversa ${t.visivel_escola || t.origem === "escola" ? "<span class='small muted'>(a escola vê)</span>" : "<span class='small muted'>(interna)</span>"}</h3>
       <div class="thread">${coms.map(k => `<div class="msg ${k.autor_tipo}"><div class="h">${esc(k.autor_nome || (k.autor_tipo === "escola" ? "Escola" : "FAG"))} · ${fmtDate(k.criado_em)}</div>${esc(k.texto)}</div>`).join("") || "<span class='muted small'>Sem mensagens.</span>"}</div>
-      <div style="display:flex;gap:6px"><input class="in" id="cm" placeholder="Escreva uma mensagem…"><button class="btn sm" id="cmOk">Enviar</button></div>` : ""}`, { wide: true });
+      ${edita("tarefas") ? `<div style="display:flex;gap:6px"><input class="in" id="cm" placeholder="Escreva uma mensagem…"><button class="btn sm" id="cmOk">Enviar</button></div>` : ""}` : ""}`, { wide: true });
   md.q("#cx").onclick = md.close;
   md.querySelectorAll("[data-path]").forEach(a => { if (a.dataset.path) a.onclick = async ev => { ev.preventDefault(); window.open(await S.api.files.url(a.dataset.path), "_blank"); }; });
-  md.q("#ok").onclick = async () => {
+  if (md.q("#ok")) md.q("#ok").onclick = async () => {
     const d = { titulo: md.q("#tt").value.trim(), descricao: md.q("#td").value.trim() || null, escola_id: md.q("#te").value || null, verba: md.q("#tv").value.trim() || null,
       status: md.q("#ts").value, prazo: md.q("#tp").value || null, responsaveis: [...md.q("#tr").selectedOptions].map(o => o.value), visivel_escola: md.q("#tvis").checked && !!md.q("#te").value };
     if (d.titulo.length < 3) return md.q("#er").textContent = "Informe o título.";
@@ -616,22 +629,34 @@ async function abrirTarefa(t, done){
 }
 
 /* =============== EQUIPE (só gestor geral) =============== */
-const MODULOS = [["escolas","Escolas"],["contratos","Renovação / contratos"],["mensalidades","Mensalidades"],["prestacoes","Prestações"],["contabil","Contábil"],["atas","ATA"],["tarefas","Tarefas"]];
+const MODULOS = [["escolas","Escolas"],["acessos","Acessos SIG / Web"],["contratos","Renovação"],["mensalidades","Mensalidades"],["prestacoes","Prestações"],["contabil","Contábil"],["atas","ATA"],["tarefas","Tarefas"]];
+const PRESET = {
+  lider: Object.fromEntries(MODULOS.map(([k]) => [k, "editar"])),
+  assistente: Object.fromEntries(MODULOS.map(([k]) => [k, "editar"])),
+  colaborador: Object.fromEntries(MODULOS.map(([k]) => [k, "ver"])),
+};
 async function pgEquipe(c){
   const ps = await S.api.select("perfis", { order: ["nome"] });
-  c.innerHTML = header("Equipe") + `<div class="notice info small">Cada pessoa cria o próprio acesso em <b>Primeiro acesso</b> (só e-mails @fagcontabilidade.com.br). Aqui você libera, define o papel e o que cada um vê. O valor do ano anterior e as senhas do SIG ficam só com o gestor geral.</div>
-    <div class="card" style="padding:0;overflow:auto"><table class="bd"><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Ativo</th><th>Módulos</th></tr></thead><tbody>
-    ${ps.map(p => `<tr data-id="${p.id}"><td><input class="in cell-in" data-k="nome" value="${esc(p.nome)}"></td><td class="small">${esc(p.email)}</td>
-      <td><select class="in cell-in" data-k="papel" ${p.id === S.me.id ? "disabled" : ""}>${["master","gestor","colaborador"].map(x => `<option value="${x}" ${p.papel === x ? "selected" : ""}>${{ master: "Gestor geral", gestor: "Gestor", colaborador: "Colaborador" }[x]}</option>`).join("")}</select></td>
-      <td class="c"><input type="checkbox" data-k="ativo" ${p.ativo ? "checked" : ""} ${p.id === S.me.id ? "disabled" : ""}></td>
-      <td>${p.papel === "master" ? "<span class='small muted'>Tudo</span>" : MODULOS.map(([k, l]) => `<label class="small" style="margin-right:8px;white-space:nowrap"><input type="checkbox" data-m="${k}" ${(p.modulos || []).includes(k) ? "checked" : ""}> ${l}</label>`).join("")}</td></tr>`).join("")}
+  const NIV = [["", "—", "#e9e4d2"], ["ver", "Ver", "#66c8f0"], ["editar", "Editar", "#63b231"]];
+  c.innerHTML = header("Equipe") + `<div class="notice info small">Cada pessoa cria o próprio acesso em <b>Primeiro acesso</b> (só e-mails @fagcontabilidade.com.br). Aqui você libera, escolhe o <b>papel</b> e personaliza o que cada um <b>vê</b> ou pode <b>editar</b> em cada módulo.
+      Ao trocar o papel, as permissões voltam ao padrão dele (Líder e Assistente: editar tudo · Colaborador: só ver) e depois podem ser ajustadas uma a uma.
+      O valor do ano anterior e a aprovação de propostas continuam só com o gestor geral.</div>
+    <div class="card" style="padding:0;overflow:auto"><table class="bd"><thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Ativo</th>${MODULOS.map(([, l]) => `<th class="c">${l}</th>`).join("")}</tr></thead><tbody>
+    ${ps.map(p => { const pm = p.permissoes || {}; const eu = p.id === S.me.id;
+      return `<tr data-id="${p.id}"><td><input class="in cell-in" data-k="nome" value="${esc(p.nome)}"></td><td class="small">${esc(p.email)}</td>
+      <td><select class="in cell-in" data-k="papel" ${eu ? "disabled" : ""}>${["master","lider","assistente","colaborador"].map(x => `<option value="${x}" ${(p.papel === x || (p.papel === "gestor" && x === "lider")) ? "selected" : ""}>${PAPEIS[x]}</option>`).join("")}</select></td>
+      <td class="c"><input type="checkbox" data-k="ativo" ${p.ativo ? "checked" : ""} ${eu ? "disabled" : ""}></td>
+      ${MODULOS.map(([k]) => p.papel === "master" ? `<td class="c small muted">Editar</td>` : `<td class="c"><select class="in cell-in" data-m="${k}" style="min-width:90px">${NIV.map(([v, l]) => `<option value="${v}" ${(pm[k] || "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></td>`).join("")}</tr>`; }).join("")}
     </tbody></table></div>`;
   $$("tr[data-id]", c).forEach(tr => {
-    const id = tr.dataset.id; const save = async patch => { try { await S.api.update("perfis", { id }, patch); toast("Salvo"); } catch (e){ toast("Erro: " + e.message); } };
+    const id = tr.dataset.id; const p = ps.find(x => x.id === id);
+    const save = async patch => { try { await S.api.update("perfis", { id }, patch); Object.assign(p, patch); toast("Salvo"); } catch (e){ toast("Erro: " + e.message); } };
     tr.querySelector("[data-k=nome]").onchange = e => save({ nome: e.target.value.trim() });
-    tr.querySelector("[data-k=papel]").onchange = e => save({ papel: e.target.value }).then(() => pgEquipe(c));
+    tr.querySelector("[data-k=papel]").onchange = async e => { const papel = e.target.value;
+      await save(papel === "master" ? { papel } : { papel, permissoes: { ...PRESET[papel] } }); pgEquipe(c); };
     tr.querySelector("[data-k=ativo]").onchange = e => save({ ativo: e.target.checked });
-    $$("[data-m]", tr).forEach(cb => cb.onchange = () => save({ modulos: $$("[data-m]:checked", tr).map(x => x.dataset.m) }));
+    const paint = sl => { const n = NIV.find(x => x[0] === sl.value); sl.style.background = n[2]; sl.style.color = sl.value ? "#fff" : "#555"; sl.style.fontWeight = 600; };
+    $$("[data-m]", tr).forEach(sl => { paint(sl); sl.onchange = () => { paint(sl); const pm = { ...(p.permissoes || {}) }; if (sl.value) pm[sl.dataset.m] = sl.value; else delete pm[sl.dataset.m]; save({ permissoes: pm }); }; });
   });
 }
 

@@ -116,7 +116,7 @@ export function abrirImportador(S, done){
           upd.push({ ...e, codigo: r.text_mksrehar || e.codigo, dre: r.text_mknj6f3p || e.dre, email: r.email_mknjfk10 || e.email, telefone: r.text_mknjh05p || e.telefone,
             ccm: r.text_mknjmtrd || e.ccm, procuracao_validade: date(r.date_mksfaz4r) || e.procuracao_validade, monday_id: r._id,
             aliases: [...new Set([...(e.aliases || []), ...(r._name.toUpperCase() !== e.nome.toUpperCase() ? [r._name] : [])])] });
-          if (S.me.papel === "master" && (r.text_mknjf6kq || r.text_mknj47rb || r.text_mknjtha)) acc.push({ escola_id: e.id, sig_login: r.text_mknjf6kq || null, sig_senha: r.text_mknj47rb || null, senha_web: r.text_mknjtha || null }); }
+          if ((S.me.papel === "master" || S.me.permissoes?.acessos === "editar") && (r.text_mknjf6kq || r.text_mknj47rb || r.text_mknjtha)) acc.push({ escola_id: e.id, sig_login: r.text_mknjf6kq || null, sig_senha: r.text_mknj47rb || null, senha_web: r.text_mknjtha || null }); }
         await up("escolas", upd, "cnpj"); await up("escolas_acessos", acc, "escola_id"); }
 
       if (dados.contratos){ log("Contratos…"); const rows = [], priv = [];

@@ -68,6 +68,24 @@ $("#btWaitOut").onclick = () => S.api.auth.logout();
   });
 })();
 
+// cliques delegados (sem JavaScript embutido no HTML)
+document.addEventListener("click", e => {
+  if (e.target.closest("[data-menu]")) return $("#side").classList.toggle("open");
+  if ($("#side").classList.contains("open") && !e.target.closest("#side")) $("#side").classList.remove("open");
+  const h = e.target.closest("[data-href]"); if (h) location.hash = h.dataset.href;
+});
+
+// segurança: encerra a sessão depois de 30 minutos sem uso
+const INATIVO_MIN = 30; let ultimoUso = Date.now();
+["click", "keydown", "touchstart", "scroll", "mousemove"].forEach(ev => addEventListener(ev, () => ultimoUso = Date.now(), { passive: true, capture: true }));
+async function checarInatividade(){
+  if (!S.me || Date.now() - ultimoUso < INATIVO_MIN * 60000) return;
+  await S.api.auth.logout().catch(() => {});
+  $("#lErr").textContent = `Por segurança, a sessão foi encerrada após ${INATIVO_MIN} minutos sem uso. Entre novamente.`;
+}
+setInterval(checarInatividade, 30000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checarInatividade(); });
+
 async function carregarTravas(){
   S.travas = new Set((await S.api.select("config", { eq: { chave: "travas_escolas" } }).catch(() => []))[0]?.valor || []);
   return S.travas;
@@ -127,7 +145,7 @@ function route(){
      contabil: pgContabil, atas: pgAtas, tarefas: pgTarefas, equipe: pgEquipe, config: pgConfig })[S.page](c)
     .catch(e => { console.error(e); c.innerHTML = `<div class="notice bad">Erro ao carregar: ${esc(e.message)}</div>`; });
 }
-const header = (titulo, extra = "") => `<div class="pg-h"><button class="btn sec sm mtoggle" onclick="document.getElementById('side').classList.toggle('open')">☰</button><h1>${titulo}</h1><div class="sp"></div>${extra}</div>`;
+const header = (titulo, extra = "") => `<div class="pg-h"><button class="btn sec sm mtoggle" data-menu>☰</button><h1>${titulo}</h1><div class="sp"></div>${extra}</div>`;
 const anoSel = (id, anos, sel) => `<select class="in" id="${id}" style="width:auto">${[...new Set(anos)].sort().reverse().map(a => `<option ${a == sel ? "selected" : ""}>${a}</option>`).join("")}</select>`;
 const thisYear = () => new Date().getFullYear();
 async function audit(acao, tabela, registro, detalhe){ try { await S.api.insert("auditoria", { acao, tabela, registro, detalhe, quem: S.me.id }); } catch {} }
@@ -167,7 +185,7 @@ async function pgPainel(c){
   const lim = new Date(Date.now() + 90 * 864e5).toISOString().slice(0, 10);
   const proc = ativas.filter(e => e.procuracao_validade && e.procuracao_validade <= lim).sort((a, b) => a.procuracao_validade.localeCompare(b.procuracao_validade));
   const resp = contr.filter(x => x.proposta_status !== "pendente").length, apr = contr.filter(x => x.proposta_status === "aprovada").length;
-  const k = (l, v, s, href) => `<div class="kpi ${href ? "click" : ""}" ${href ? `onclick="location.hash='${href}'"` : ""}><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+  const k = (l, v, s, href) => `<div class="kpi ${href ? "click" : ""}" ${href ? `data-href="${esc(href)}"` : ""}><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
   c.innerHTML = header(`Olá, ${esc(S.me.nome.split(" ")[0])}!`, `<span class="muted small">${new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}</span>`) + `
     <div class="kpis">
       ${k("Escolas ativas", ativas.length, `Grupo A ${ativas.filter(e => e.grupo === "A").length} · Grupo B ${ativas.filter(e => e.grupo === "B").length}`, "#/escolas")}
@@ -329,8 +347,8 @@ async function fDados(fb, e, again){
       <div class="field"><label class="f">Senha Web</label><input class="in" id="a3" ${ro} value="${esc(a.senha_web || "")}"></div></div>
       ${edita("acessos") ? `<button class="btn sm" id="svA">Salvar acessos</button>` : ""}`;
     box.querySelector("#svA")?.addEventListener("click", async () => {
-      try { await S.api.upsert("escolas_acessos", [{ escola_id: e.id, sig_login: box.querySelector("#a1").value || null, sig_senha: box.querySelector("#a2").value || null, senha_web: box.querySelector("#a3").value || null }], "escola_id");
-        audit("editar_senha", "escolas_acessos", e.id); toast("Acessos salvos"); } catch (err){ toast("Erro: " + err.message); } });
+      try { await S.api.rpc("salvar_acessos", { p: { escola_id: e.id, sig_login: box.querySelector("#a1").value.trim(), sig_senha: box.querySelector("#a2").value, senha_web: box.querySelector("#a3").value } });
+        toast("Acessos salvos (criptografados)"); } catch (err){ toast("Erro: " + err.message); } });
   });
 }
 async function fContratos(fb, e){
@@ -759,8 +777,26 @@ async function pgConfig(c){
       <button class="btn" id="svCfg">Salvar</button></div>
     <div class="card"><h2>Importar do monday</h2><p class="small muted">Lê os quadros da pasta <b>Escolas</b> no monday e atualiza o CRM. <b>Nada é alterado ou apagado no monday.</b> Pode repetir quantas vezes quiser até janeiro: os registros são atualizados, não duplicados. A renovação do ano da campanha não é sobrescrita.</p>
       <button class="btn" id="btMon">Abrir importador</button></div>
+    <div class="card"><h2>Cópia de segurança</h2><p class="small muted">Baixa uma planilha com todos os dados do CRM (escolas, contratos, mensalidades, prestações, contábil, ATA, tarefas e lista de arquivos). As senhas SIG / Web <b>não</b> vão na cópia: ficam só no banco, criptografadas. Guarde o arquivo em local protegido da FAG.</p>
+      <button class="btn" id="btBkp">⬇ Baixar cópia de segurança</button></div>
     <div class="card"><h2>Registro de acessos sensíveis</h2><ul class="list">${aud.slice(0, 50).map(a => `<li><span>${esc(pn[a.quem] || "?")} · ${esc(a.acao)} ${a.registro && S.esc[a.registro] ? "· " + esc(S.esc[a.registro].nome) : ""}</span><span class="small muted">${fmtDate(a.quando)}</span></li>`).join("") || "<li class='muted'>Nada registrado.</li>"}</ul></div>`;
   $("#svCfg").onclick = async () => { const v = { ano: +$("#cAno").value, valorGuia: r2(+$("#cGuia").value), vigencia: $("#cVig").value.trim(), aberto: $("#cAb").value === "1" };
     await S.api.upsert("config", [{ chave: "campanha", valor: v }], "chave"); S.cfg = v; toast("Configuração salva"); };
   $("#btMon").onclick = () => abrirImportador(S, async () => { setEscolas(await S.api.select("escolas", { order: ["nome"] })); });
+  $("#btBkp").onclick = async () => {
+    const b = $("#btBkp"); b.disabled = true; b.textContent = "Gerando…";
+    try {
+      const X = await xlsx(), wb = X.utils.book_new();
+      const tabelas = ["escolas","contratos","contratos_privado","mensalidades","prestacoes","balancetes","atas","tarefas","comentarios","escola_arquivos","perfis","config"];
+      for (const t of tabelas){
+        const rows = (await S.api.select(t).catch(() => [])).map(r => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v && typeof v === "object" ? JSON.stringify(v) : v])));
+        X.utils.book_append_sheet(wb, X.utils.json_to_sheet(rows.length ? rows : [{ vazio: "" }]), t.slice(0, 31));
+      }
+      const acc = await S.api.select("escolas_acessos", { cols: "escola_id,sig_login" }).catch(() => []);
+      X.utils.book_append_sheet(wb, X.utils.json_to_sheet(acc.length ? acc : [{ vazio: "" }]), "acessos_sem_senha");
+      X.writeFile(wb, `backup_crm_fag_escolas_${today()}.xlsx`);
+      audit("backup", "config", null); toast("Cópia de segurança baixada");
+    } catch (e){ toast("Erro: " + e.message); }
+    b.disabled = false; b.textContent = "⬇ Baixar cópia de segurança";
+  };
 }

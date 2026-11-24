@@ -119,3 +119,32 @@ table.bd td:first-child a.nm{font-weight:600;color:var(--ink);text-decoration:no
 .lk{border:0;background:transparent;cursor:pointer;font-size:12px;padding:0 2px;opacity:.55;vertical-align:middle}
 .lk:hover{opacity:1} .lk:disabled{cursor:default;opacity:.8}
 table.bd th.trv{background:#f3ecd8;color:#8a6d1f}
+
+/* ===================== Celular (Android / iPhone) ===================== */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{padding-bottom:env(safe-area-inset-bottom)}
+@media (max-width:760px){
+  /* letra de 16px nos campos evita o zoom automático do iPhone ao tocar */
+  input,select,textarea,.in,select.in,textarea.in{font-size:16px}
+  .btn{min-height:42px}
+  .btn.sm{min-height:36px}
+  .fag-footer{padding:16px 14px 14px;font-size:12.5px}
+  .fag-footer>.rainbow{margin:-16px -14px 12px!important}
+  .fag-footer .in-f{gap:8px 14px}
+  .fag-footer .marca{flex-wrap:wrap;justify-content:center;gap:4px 8px}
+  .fag-footer .marca span{flex-basis:100%}
+  .modal-bg{padding:14px 8px}
+  .modal{padding:16px}
+  .drawer-h{padding:12px 14px}
+  .drawer-b{padding:12px}
+  .pop-st button{padding:11px 12px;font-size:15px}
+  .pop-pp label{padding:7px 3px;font-size:15px}
+  .toast{bottom:calc(18px + env(safe-area-inset-bottom));max-width:92vw;text-align:center}
+  /* tabelas: nome da escola fica fixo ao arrastar para o lado */
+  table.bd{font-size:13px}
+  table.bd th:first-child,table.bd td:first-child{position:sticky;left:0;z-index:1;background:#fff;box-shadow:1px 0 0 var(--line)}
+  table.bd th:first-child{background:#faf7ec;z-index:2}
+  table.bd td:first-child{min-width:160px;max-width:210px}
+  table.bd tbody tr:hover td:first-child{background:#fdfbf4}
+  .bd-wrap{-webkit-overflow-scrolling:touch}
+}

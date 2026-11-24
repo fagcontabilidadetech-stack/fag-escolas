@@ -116,8 +116,8 @@ export function abrirImportador(S, done){
           upd.push({ ...e, codigo: r.text_mksrehar || e.codigo, dre: r.text_mknj6f3p || e.dre, email: r.email_mknjfk10 || e.email, telefone: r.text_mknjh05p || e.telefone,
             ccm: r.text_mknjmtrd || e.ccm, procuracao_validade: date(r.date_mksfaz4r) || e.procuracao_validade, monday_id: r._id,
             aliases: [...new Set([...(e.aliases || []), ...(r._name.toUpperCase() !== e.nome.toUpperCase() ? [r._name] : [])])] });
-          if ((S.me.papel === "master" || S.me.permissoes?.acessos === "editar") && (r.text_mknjf6kq || r.text_mknj47rb || r.text_mknjtha)) acc.push({ escola_id: e.id, sig_login: r.text_mknjf6kq || null, sig_senha: r.text_mknj47rb || null, senha_web: r.text_mknjtha || null }); }
-        await up("escolas", upd, "cnpj"); await up("escolas_acessos", acc, "escola_id"); }
+          if ((S.me.papel === "master" || S.me.permissoes?.acessos === "editar") && (r.text_mknjf6kq || r.text_mknj47rb || r.text_mknjtha)) acc.push(Object.fromEntries(Object.entries({ escola_id: e.id, sig_login: r.text_mknjf6kq, sig_senha: r.text_mknj47rb, senha_web: r.text_mknjtha }).filter(([, v]) => v))); }
+        await up("escolas", upd, "cnpj"); for (let i = 0; i < acc.length; i += 200){ R.escolas_acessos = (R.escolas_acessos || 0) + await S.api.rpc("salvar_acessos", { p: acc.slice(i, i + 200) }); } }
 
       if (dados.contratos){ log("Contratos…"); const rows = [], priv = [];
         for (const r of dados.contratos){ const ano = yearOf(r._group); const id = idOf(r._name); if (!id || !ano || ano === S.cfg.ano) continue;

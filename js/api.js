@@ -32,7 +32,7 @@ async function supabaseApi(){
       let out = []; for (let i = 0; i < rows.length; i += 500) out = out.concat(chk(await sb.from(t).upsert(rows.slice(i, i + 500), { onConflict, ignoreDuplicates }).select()));
       return out; },
     async remove(t, match){ let q = sb.from(t).delete(); for (const [k, v] of Object.entries(match)) q = q.eq(k, v); return chk(await q); },
-    async rpc(fn, args){ return chk(await sb.rpc(fn, args)); },
+    async rpc(fn, args){ const d = chk(await sb.rpc(fn, args)); if (d && typeof d === "object" && !Array.isArray(d) && d.erro) throw new Error(d.erro); return d; },
     auth: {
       async login(email, pin){ chk(await sb.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: pin })); },
       async signup(nome, email, pin){ chk(await sb.auth.signUp({ email: email.trim().toLowerCase(), password: pin, options: { data: { nome }, emailRedirectTo: location.origin + location.pathname } })); },
@@ -122,7 +122,13 @@ function demoApi(){
   }
   function demoRpc(fn, a){
     fresh();
-    if (fn === "ver_acessos"){ return T("escolas_acessos").find(x => x.escola_id === a.p_escola) || {}; }
+    if (fn === "ver_acessos"){ return structuredClone(T("escolas_acessos").find(x => x.escola_id === a.p_escola) || {}); }
+    if (fn === "salvar_acessos"){
+      const tr = T("config").find(c => c.chave === "travas_escolas")?.valor || [];
+      const rows = [].concat(a.p);
+      for (const r of rows){ let x = T("escolas_acessos").find(y => y.escola_id === r.escola_id); if (!x){ x = { escola_id: r.escola_id }; T("escolas_acessos").push(x); }
+        for (const k of ["sig_login","sig_senha","senha_web"]) if (k in r && !tr.includes(k)) x[k] = r[k] || null; }
+      save(); return rows.length; }
     const e = escPorChave(a.p_chave); const cfg = T("config").find(c => c.chave === "campanha").valor;
     const c = T("contratos").find(x => x.escola_id === e.id && x.ano === cfg.ano);
     if (fn === "portal_dados"){

@@ -9,7 +9,8 @@ const SERV = {
   guia: { nome: "Recálculo de guias e TFE não pagas pela APM", desc: "Valor fixo mensal", grupos: ["A","B"] },
 };
 const ERROS = { CHAVE_INVALIDA: "Chave não encontrada. Confira se digitou corretamente.", PRAZO_ENCERRADO: "O prazo para envio está encerrado. Fale com a FAG.",
-  PROPOSTA_FECHADA: "Esta proposta já foi analisada pela FAG.", CPF_INVALIDO: "CPF inválido.", LIMITE_DIARIO: "Limite de solicitações do dia atingido.", SEM_PROPOSTA: "Ainda não há proposta para a sua escola." };
+  PROPOSTA_FECHADA: "Esta proposta já foi analisada pela FAG.", CPF_INVALIDO: "CPF inválido.", LIMITE_DIARIO: "Limite de solicitações do dia atingido.", SEM_PROPOSTA: "Ainda não há proposta para a sua escola.",
+  MUITAS_TENTATIVAS: "Muitas tentativas com chave errada. Por segurança, aguarde 15 minutos e tente de novo." };
 const msgErro = e => { const k = Object.keys(ERROS).find(x => String(e.message).includes(x)); return k ? ERROS[k] : "Não foi possível concluir agora. Tente novamente em instantes."; };
 
 (async () => {
@@ -25,11 +26,19 @@ $("#inKey").addEventListener("keydown", e => { if (e.key === "Enter") acessar();
 $("#btKey").onclick = acessar;
 $("#lnkSair").onclick = e => { e.preventDefault(); history.replaceState(null, "", location.pathname); location.reload(); };
 
+// segurança: fecha o portal depois de 20 minutos sem uso (celular esquecido aberto, computador compartilhado)
+let ultimoUso = Date.now();
+["click", "keydown", "touchstart", "scroll"].forEach(ev => addEventListener(ev, () => ultimoUso = Date.now(), { passive: true, capture: true }));
+const checarInatividade = () => { if (P.key && Date.now() - ultimoUso > 20 * 60000){ P.key = null; history.replaceState(null, "", location.pathname); location.reload(); } };
+setInterval(checarInatividade, 30000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checarInatividade(); });
+
 async function acessar(){
   const k = normKey($("#inKey").value); $("#keyErr").textContent = "";
   if (k.length !== 8) return $("#keyErr").textContent = "A chave tem 8 caracteres.";
   $("#btKey").disabled = true;
-  try { P.key = k; await carregar(); $("#stepKey").classList.add("hidden"); $("#stepApp").classList.remove("hidden"); }
+  try { P.key = k; await carregar(); $("#stepKey").classList.add("hidden"); $("#stepApp").classList.remove("hidden");
+    if (location.search) history.replaceState(null, "", location.pathname); }   // tira a chave da barra de endereço
   catch (e){ $("#keyErr").textContent = msgErro(e); }
   finally { $("#btKey").disabled = false; }
 }

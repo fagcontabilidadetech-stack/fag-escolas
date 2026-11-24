@@ -61,6 +61,10 @@ main.content{padding:22px 26px 60px;min-width:0}
 .msg .h{font-size:11.5px;color:var(--muted);margin-bottom:2px}
 .mgrid{display:grid;grid-template-columns:repeat(12,1fr);gap:4px}
 .mgrid div{text-align:center;font-size:11px}
+.mcel{padding:4px 2px;border-radius:8px;border:1px solid transparent}
+.mcel.ed{cursor:pointer}.mcel.ed:hover,.mcel.ed:focus{background:#f4f7fd;border-color:#c9d6f0;outline:none}
+.mcel .btn{min-height:0;padding:2px 10px;margin-top:3px}
+@media(max-width:760px){.mgrid{grid-template-columns:repeat(4,1fr);gap:8px 4px}.mcel{padding:6px 2px}}
 </style>
 </head>
 <body>

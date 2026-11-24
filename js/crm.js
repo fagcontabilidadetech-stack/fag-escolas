@@ -1,7 +1,7 @@
 // ===================== CRM FAG Escolas =====================
 import { getApi } from "./api.js";
 import { $, $$, esc, r2, brl, fmtDate, fmtKey, newKey, toast, modal, ST, chip, VERBAS, FORMAS, MESES, compLabel, today, onlyDig } from "./util.js";
-import { Board, kanban, battery } from "./board.js";
+import { Board, kanban, battery, popover, closePop } from "./board.js";
 import { abrirImportador } from "./importador.js";
 
 const S = { api: null, me: null, cfg: null, escolas: [], esc: {}, team: [], page: "painel", cache: {} };
@@ -351,33 +351,96 @@ async function fDados(fb, e, again){
         toast("Acessos salvos (criptografados)"); } catch (err){ toast("Erro: " + err.message); } });
   });
 }
-async function fContratos(fb, e){
+async function fContratos(fb, e, again){
+  const E = edita("contratos");
   const cs = await S.api.select("contratos", { eq: { escola_id: e.id }, order: ["ano", "desc"] });
   const priv = isMaster() ? Object.fromEntries((await S.api.select("contratos_privado", { in: { contrato_id: cs.map(x => x.id) } })).map(p => [p.contrato_id, p])) : {};
-  fb.innerHTML = cs.map(x => `<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><h3>Contrato ${x.ano}</h3><div>${chip(ST.contrato, x.status)} ${x.ano === S.cfg.ano ? chip(ST.proposta, x.proposta_status) : ""}</div></div>
+  fb.innerHTML = (E && cs.length ? `<p class="small muted" style="margin-top:0">Toque no status do contrato para alterar.</p>` : "") +
+    (cs.map(x => `<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><h3>Contrato ${x.ano}</h3><div><span data-cst="${x.id}">${chip(ST.contrato, x.status, { cls: E ? "click" : "" })}</span> ${x.ano === S.cfg.ano ? chip(ST.proposta, x.proposta_status) : ""}</div></div>
     <div class="small">Mensalidade base: <b>${brl(x.honorario)}</b>${x.pacotes ? ` · Pacote: <b>${brl(x.pacotes)}</b> · Total: <b>${brl(r2(+x.honorario + +x.pacotes))}</b>` : ""}
     ${priv[x.id]?.honorario_ant ? ` · <span class="muted">Ano anterior: ${brl(priv[x.id].honorario_ant)}</span>` : ""}</div>
     ${x.resp_nome ? `<div class="small muted">Responsável: ${esc(x.resp_nome)} · CPF ${esc(x.resp_cpf || "")} · ${esc(x.resp_email || "")} · ${esc(x.resp_tel || "")}</div>` : ""}
-    ${(x.arquivos || []).length ? `<div class="small" style="margin-top:6px">${x.arquivos.map(a => `<a href="${esc(a.url || "#")}" target="_blank" rel="noopener">📎 ${esc(a.nome)}</a>`).join(" · ")}</div>` : ""}</div>`).join("") || `<div class="card muted">Nenhum contrato.</div>`;
+    ${(x.arquivos || []).length ? `<div class="small" style="margin-top:6px">${x.arquivos.map(a => `<a href="${esc(a.url || "#")}" target="_blank" rel="noopener">📎 ${esc(a.nome)}</a>`).join(" · ")}</div>` : ""}</div>`).join("") || `<div class="card muted">Nenhum contrato.</div>`);
+  if (E) $$("[data-cst]", fb).forEach(el => el.onclick = () => escolherStatus(el, ST.contrato, async v => {
+    await S.api.update("contratos", { id: el.dataset.cst }, { status: v }); audit("status_contrato", "contratos", el.dataset.cst, { status: v }); toast("Contrato atualizado"); again(); }));
 }
-async function fMens(fb, e){
+
+/* escolha rápida de status (mesmo visual dos quadros) */
+function escolherStatus(anchor, dict, onPick, { limpar = false } = {}){
+  const p = popover(anchor, `<div class="pop-st">${Object.entries(dict).map(([k, d]) => `<button data-v="${esc(k)}" style="background:${d.color}">${esc(d.label)}</button>`).join("")}
+    ${limpar ? `<button data-v="" style="background:#eee;color:#555">Limpar</button>` : ""}</div>`);
+  p.querySelectorAll("button").forEach(b => b.onclick = async () => { closePop(); try { await onPick(b.dataset.v || null); } catch (err){ toast("Erro: " + err.message); } });
+}
+
+async function fMens(fb, e, again){
+  const E = edita("mensalidades");
   const ms = await S.api.select("mensalidades", { eq: { escola_id: e.id }, order: ["competencia"] });
-  const anos = [...new Set(ms.map(m => m.competencia.slice(0, 4)))].sort().reverse();
-  fb.innerHTML = anos.map(a => { const doAno = ms.filter(m => m.competencia.startsWith(a));
-    return `<div class="card"><h3>${a}</h3><div class="mgrid">${MESES.map((mm, i) => { const m = doAno.find(x => +x.competencia.slice(5, 7) === i + 1);
-      return `<div><div class="muted">${mm}</div>${m ? chip(ST.mensalidade, m.status, { cls: "mini" }) + `<div>${m.valor != null ? Number(m.valor).toLocaleString("pt-BR") : ""}</div>` : "–"}</div>`; }).join("")}</div>
-      <div class="small muted" style="margin-top:8px">Pago no ano: ${brl(doAno.filter(m => m.status === "pago").reduce((s, m) => s + (+m.valor || 0), 0))}</div></div>`; }).join("") || `<div class="card muted">Sem mensalidades lançadas.</div>`;
+  const anos = [...new Set([...ms.map(m => m.competencia.slice(0, 4)), ...(E ? [String(thisYear())] : [])])].sort().reverse();
+  const hojeComp = today().slice(0, 7) + "-01";
+  fb.innerHTML = (E ? `<p class="small muted" style="margin-top:0">Toque no mês para <b>dar baixa</b> ou alterar. Mês sem lançamento: toque em <b>+</b> para criar.</p>` : "") +
+    (anos.map(a => { const doAno = ms.filter(m => m.competencia.startsWith(a));
+      const pago = doAno.filter(m => m.status === "pago").reduce((s, m) => s + (+m.valor || 0), 0);
+      const aberto = doAno.filter(m => ["a_receber", "em_atraso", "cobrado"].includes(m.status) && m.competencia <= hojeComp).reduce((s, m) => s + (+m.valor || 0), 0);
+      return `<div class="card"><h3>${a}</h3><div class="mgrid">${MESES.map((mm, i) => { const comp = `${a}-${String(i + 1).padStart(2, "0")}-01`; const m = doAno.find(x => x.competencia === comp);
+        if (m) return `<div class="mcel ${E ? "ed" : ""}" ${E ? `data-m="${m.id}" role="button" tabindex="0"` : ""}><div class="muted">${mm}</div>${chip(ST.mensalidade, m.status, { cls: "mini" })}<div>${m.valor != null ? Number(m.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : ""}</div>${m.status === "pago" && m.data ? `<div class="muted" style="font-size:10.5px">${fmtDate(m.data).slice(0, 5)}${m.forma ? " · " + esc(m.forma) : ""}</div>` : ""}</div>`;
+        return `<div class="mcel"><div class="muted">${mm}</div>${E ? `<button class="btn sm ghost" data-novo="${comp}" title="Lançar ${mm}/${a}">+</button>` : "–"}</div>`; }).join("")}</div>
+        <div class="small muted" style="margin-top:8px">Pago no ano: <b>${brl(pago)}</b>${aberto ? ` · Em aberto até hoje: <b style="color:var(--bad)">${brl(aberto)}</b>` : ""}</div></div>`; }).join("") || `<div class="card muted">Sem mensalidades lançadas.</div>`);
+  $$("[data-m]", fb).forEach(el => { const abrir = () => editarMensalidade(ms.find(m => m.id === el.dataset.m), e, again); el.onclick = abrir; el.onkeydown = ev => { if (ev.key === "Enter") abrir(); }; });
+  $$("[data-novo]", fb).forEach(el => el.onclick = () => editarMensalidade({ escola_id: e.id, competencia: el.dataset.novo, valor: e.honorario, status: "a_receber" }, e, again));
 }
+
+function editarMensalidade(m, e, done){
+  const novo = !m.id;
+  const opt = (dict, v, vazio) => (vazio ? `<option value="">—</option>` : "") + Object.entries(dict).map(([k, d]) => `<option value="${esc(k)}" ${k === v ? "selected" : ""}>${esc(d.label)}</option>`).join("");
+  const md = modal(`<h2>${novo ? "Lançar" : "Mensalidade"} ${compLabel(m.competencia)}</h2><div class="small muted" style="margin:-4px 0 12px">${esc(e.nome)}</div>
+    ${!novo && m.status !== "pago" ? `<button class="btn" id="bxHoje" style="width:100%;margin-bottom:14px;background:#00c875">✓ Dar baixa hoje (${fmtDate(today())})</button>` : ""}
+    <div class="grid2"><div class="field"><label class="f">Status</label><select class="in" id="mSt">${opt(ST.mensalidade, m.status)}</select></div>
+      <div class="field"><label class="f">Valor (R$)</label><input class="in" id="mVl" type="number" step="0.01" inputmode="decimal" value="${m.valor ?? ""}"></div>
+      <div class="field"><label class="f">Data da baixa</label><input class="in" id="mDt" type="date" value="${m.data || ""}"></div>
+      <div class="field"><label class="f">Forma de pagamento</label><select class="in" id="mFm">${opt(DICT_FORMA, m.forma, true)}</select></div>
+      <div class="field"><label class="f">Cartório (R$)</label><input class="in" id="mCt" type="number" step="0.01" inputmode="decimal" value="${m.cartorio ?? ""}"></div>
+      <div class="field"><label class="f">Pacotes no mês</label><div style="display:flex;gap:14px;padding-top:8px">${[["ata","ATA"],["esc","Escan."],["guia","Guias"]].map(([k, l]) => `<label class="small"><input type="checkbox" id="mP_${k}" ${m[k] ? "checked" : ""}> ${l}</label>`).join("")}</div></div></div>
+    <div class="field"><label class="f">Observação</label><input class="in" id="mOb" value="${esc(m.obs || "")}"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="ok">Salvar</button><button class="btn sec" id="cx">Cancelar</button></div><div class="err" id="er"></div>`);
+  md.q("#cx").onclick = md.close;
+  md.q("#mSt").onchange = () => { if (md.q("#mSt").value === "pago" && !md.q("#mDt").value) md.q("#mDt").value = today(); };
+  const num = s => s === "" ? null : +s;
+  const salvar = async () => {
+    const p = { status: md.q("#mSt").value, valor: num(md.q("#mVl").value), data: md.q("#mDt").value || null, forma: md.q("#mFm").value || null,
+      cartorio: num(md.q("#mCt").value), obs: md.q("#mOb").value.trim() || null, ata: md.q("#mP_ata").checked, esc: md.q("#mP_esc").checked, guia: md.q("#mP_guia").checked };
+    if (p.status === "pago" && !p.data) p.data = today();
+    md.q("#ok").disabled = true;
+    try {
+      if (novo) await S.api.insert("mensalidades", { escola_id: e.id, competencia: m.competencia, responsaveis: e.responsaveis || [], ...p });
+      else await S.api.update("mensalidades", { id: m.id }, p);
+      md.close(); toast(p.status === "pago" ? "Baixa registrada" : "Mensalidade salva"); done();
+    } catch (err){ md.q("#er").textContent = "Não foi possível salvar: " + err.message; md.q("#ok").disabled = false; }
+  };
+  md.q("#ok").onclick = salvar;
+  md.q("#bxHoje")?.addEventListener("click", () => { md.q("#mSt").value = "pago"; md.q("#mDt").value = today(); salvar(); });
+}
+
 async function fPrest(fb, e){
+  const E = edita("prestacoes");
   const ps = await S.api.select("prestacoes", { eq: { escola_id: e.id }, order: ["ano", "desc"] });
-  fb.innerHTML = ps.length ? `<div class="card"><table class="bd">${ps.map(p => `<tr><td>${p.ano}</td><td><b>${p.programa}</b> ${esc(p.referencia)}</td><td>${p.quem_presta ? chip(ST.quem, p.quem_presta, { cls: "mini" }) : ""}</td><td>${chip(ST.prestacao, p.status, { cls: "mini" })}</td>
-    <td>${p.programa === "PDDE" ? MESES.map(mm => p.meses?.[mm] ? `<span title="${mm}: ${esc(p.meses[mm])}" style="display:inline-block;width:10px;height:14px;border-radius:2px;background:${ST.mes[p.meses[mm]]?.color || "#ddd"}"></span>` : "").join(" ") : fmtDate(p.entregue_em)}</td></tr>`).join("")}</table></div>` : `<div class="card muted">Sem prestações.</div>`;
+  const progs = ["PTRF", "PDDE"].filter(p => ps.some(x => x.programa === p));
+  if (!progs.length) return fb.innerHTML = `<div class="card muted">Sem prestações.</div>`;
+  fb.innerHTML = (E ? `<p class="small muted" style="margin-top:0">Toque no status ou na data para alterar, como nos quadros.</p>` : "") + progs.map(p => `<div id="fp_${p}" style="margin-bottom:14px"></div>`).join("");
+  for (const p of progs) new Board(fb.querySelector("#fp_" + p), { semFerramentas: true, id: "ficha_prest_" + p,
+    rows: ps.filter(x => x.programa === p).map(x => ({ ...x, _ref: x.referencia })), groupBy: r => r.ano, groupOrder: (a, b) => b - a, groupLabel: k => `${p} ${k}`,
+    columns: [{ key: "_ref", label: "Referência", type: "text", width: 150 }, ...colsPrest(p, E)], onEdit: salvarPrest, afterRender: p === "PDDE" ? pddeMini : undefined });
 }
-async function fContabil(fb, e){
+async function fContabil(fb, e, again){
   const [bs, as] = await Promise.all([tem("contabil") ? S.api.select("balancetes", { eq: { escola_id: e.id }, order: ["ano", "desc"] }) : [], tem("atas") ? S.api.select("atas", { eq: { escola_id: e.id }, order: ["ano", "desc"] }) : []]);
-  fb.innerHTML = (bs.length ? `<div class="card"><h3>Balancetes e obrigações</h3><table class="bd"><tr><th>Ano</th><th>1º Rep.</th><th>2º Rep.</th><th>3º Rep.</th><th>PDDE</th><th>ECD</th><th>ECF</th></tr>${bs.map(b => `<tr><td>${b.ano}</td>${["rep1","rep2","rep3","pdde"].map(k => `<td>${chip(ST.balancete, b[k], { cls: "mini" })}</td>`).join("")}${["ecd","ecf"].map(k => `<td>${chip(ST.obrigacao, b[k], { cls: "mini" })}</td>`).join("")}</tr>`).join("")}</table></div>` : "")
-    + (as.length ? `<div class="card"><h3>ATA Bienal</h3>${as.map(a => `<div class="small"><b>${a.ano}</b> · Elaboração: ${esc(a.elaboracao || "–")} · Arquivo: ${chip(ST.ataArquivo, a.arquivo_status, { cls: "mini" })} · Documentos: ${chip(ST.ataDocs, a.documentos_status, { cls: "mini" })} · Pagamento: ${esc(a.pagamento || "–")} ${a.valor_cartorio ? "· Cartório " + brl(a.valor_cartorio) : ""}</div>`).join("")}</div>` : "")
-    || `<div class="card muted">Sem registros.</div>`;
+  fb.innerHTML = (podeAnexar() ? `<div style="margin-bottom:10px"><button class="btn sm sec" id="anx">📎 Anexar arquivo (balancete, recibo…)</button></div>` : "")
+    + (tem("contabil") ? `<h3 style="margin:6px 0">Balancetes e obrigações</h3>${bs.length ? `<div id="fBal"></div>` : `<div class="card muted">Sem balancetes.</div>`}` : "")
+    + (tem("atas") ? `<h3 style="margin:16px 0 6px">ATA Bienal</h3>${as.length ? `<div id="fAta"></div>` : `<div class="card muted">Sem registros de ATA.</div>`}` : "");
+  fb.querySelector("#anx")?.addEventListener("click", () => anexarArquivo(e.id, {}, () => toast("Arquivo salvo na aba Arquivos")));
+  const ano = { key: "ano", label: "Ano", type: "num", width: 60 };
+  if (bs.length) new Board(fb.querySelector("#fBal"), { semFerramentas: true, id: "ficha_bal", rows: bs, columns: [ano, ...colsBal(edita("contabil"))],
+    onEdit: (r, k, v) => S.api.update("balancetes", { id: r.id }, { [k]: v }) });
+  if (as.length) new Board(fb.querySelector("#fAta"), { semFerramentas: true, id: "ficha_ata", rows: as, columns: [ano, ...colsAta(edita("atas"))],
+    onEdit: (r, k, v) => S.api.update("atas", { id: r.id }, { [k]: v }) });
 }
 async function fTarefas(fb, e, again){
   const ts = await S.api.select("tarefas", { eq: { escola_id: e.id }, order: ["criado_em", "desc"] });
@@ -543,16 +606,10 @@ async function pgMensalidades(c, ano){
     columns: [
       { key: "_nome", label: "Escola", type: "name", width: 260 },
       { key: "responsaveis", label: "Responsável", type: "people", width: 100, editable: E },
-      { key: "ata", label: "ATA", type: "check", width: 50, editable: E }, { key: "esc", label: "Esc", type: "check", width: 50, editable: E }, { key: "guia", label: "Guia", type: "check", width: 50, editable: E },
-      { key: "cartorio", label: "Cartório", type: "money", width: 90, editable: E },
-      { key: "forma", label: "Forma", type: "status", dict: DICT_FORMA, width: 100, editable: E, clearable: true, battery: false },
-      { key: "valor", label: "Valor", type: "money", width: 100, editable: E },
-      { key: "status", label: "Status", type: "status", dict: ST.mensalidade, width: 120, editable: E },
-      { key: "data", label: "Data", type: "date", width: 100, editable: E },
-      { key: "obs", label: "Obs.", type: "text", width: 160, editable: E },
+      ...colsMens(E),
     ],
     onOpen: r => fichaEscola(r.escola_id, "mensalidades"),
-    onEdit: async (r, key, v) => { const p = { [key]: v }; if (key === "status" && v === "pago" && !r.data){ p.data = today(); r.data = p.data; } await S.api.update("mensalidades", { id: r.id }, p); },
+    onEdit: salvarMens,
   });
   if ($("#btGerar")) $("#btGerar").onclick = () => gerarMensalidades(ano, () => pgMensalidades(c, ano));
 }
@@ -578,6 +635,40 @@ function gerarMensalidades(anoAtual, done){
   };
 }
 
+/* =============== COLUNAS COMPARTILHADAS (página do módulo e ficha da escola) =============== */
+const colsMens = E => [
+  { key: "ata", label: "ATA", type: "check", width: 50, editable: E }, { key: "esc", label: "Esc", type: "check", width: 50, editable: E }, { key: "guia", label: "Guia", type: "check", width: 50, editable: E },
+  { key: "cartorio", label: "Cartório", type: "money", width: 90, editable: E },
+  { key: "forma", label: "Forma", type: "status", dict: DICT_FORMA, width: 100, editable: E, clearable: true, battery: false },
+  { key: "valor", label: "Valor", type: "money", width: 100, editable: E },
+  { key: "status", label: "Status", type: "status", dict: ST.mensalidade, width: 120, editable: E },
+  { key: "data", label: "Data", type: "date", width: 100, editable: E },
+  { key: "obs", label: "Obs.", type: "text", width: 160, editable: E }];
+const salvarMens = async (r, key, v) => { const p = { [key]: v }; if (key === "status" && v === "pago" && !r.data){ p.data = today(); r.data = p.data; } await S.api.update("mensalidades", { id: r.id }, p); };
+const colsPrest = (prog, E) => prog === "PTRF" ? [
+    { key: "quem_presta", label: "Prestação", type: "status", dict: ST.quem, width: 110, editable: E, clearable: true },
+    { key: "status", label: "Status", type: "status", dict: ST.prestacao, width: 130, editable: E },
+    { key: "prioridade", label: "Prioridade", type: "text", width: 90, editable: E },
+    { key: "inicio", label: "Início", type: "date", width: 100, editable: E }, { key: "prazo", label: "Prazo", type: "date", width: 100, editable: E },
+    { key: "entregue_em", label: "Entregue em", type: "date", width: 100, editable: E }, { key: "obs", label: "Obs.", type: "text", width: 160, editable: E }]
+  : [{ key: "status", label: "Status", type: "status", dict: ST.prestacao, width: 130, editable: E },
+    ...MESES.map(mm => ({ key: "m_" + mm, label: mm, type: "status", dict: ST.mes, width: 46, editable: E, clearable: true, battery: false,
+      get: r => r.meses?.[mm] || null, set: (r, v) => { r.meses = { ...(r.meses || {}) }; if (v) r.meses[mm] = v; else delete r.meses[mm]; } })),
+    { key: "obs", label: "Obs.", type: "text", width: 160, editable: E }];
+const salvarPrest = async (r, key, v) => { const p = key.startsWith("m_") ? { meses: r.meses } : { [key]: v }; if (key === "status" && v === "Entregue" && !r.entregue_em){ p.entregue_em = today(); r.entregue_em = p.entregue_em; } await S.api.update("prestacoes", { id: r.id }, p); };
+const pddeMini = el => el.querySelectorAll("table.bd .chip").forEach(ch => { if (ch.textContent.length > 12) ch.classList.add("mini"); });
+const colsBal = E => { const st = (k, l, d) => ({ key: k, label: l, type: "status", dict: d, width: 120, editable: E, clearable: true });
+  return [st("rep1", "1º Repasse", ST.balancete), st("rep2", "2º Repasse", ST.balancete), st("rep3", "3º Repasse", ST.balancete), st("pdde", "PDDE", ST.balancete),
+    st("ecd", "ECD", ST.obrigacao), st("ecf", "ECF", ST.obrigacao), { key: "obs", label: "Obs.", type: "text", width: 150, editable: E }]; };
+const colsAta = E => { const quem = { FAG: ST.quem.FAG, ESCOLA: ST.quem.ESCOLA };
+  return [{ key: "elaboracao", label: "Elaboração", type: "status", dict: quem, width: 100, editable: E, clearable: true },
+    { key: "arquivo_status", label: "Arquivo ATA", type: "status", dict: ST.ataArquivo, width: 130, editable: E, clearable: true },
+    { key: "documentos_status", label: "Documentos", type: "status", dict: ST.ataDocs, width: 100, editable: E, clearable: true },
+    { key: "data_envio", label: "Envio p/ escola", type: "date", width: 110, editable: E },
+    { key: "pagamento", label: "Pagamento", type: "status", dict: ST.ataPag, width: 130, editable: E, clearable: true },
+    { key: "data_entrada_ata", label: "Entrada ATA", type: "date", width: 105, editable: E }, { key: "data_entrada_termo", label: "Entrada termo", type: "date", width: 105, editable: E },
+    { key: "valor_cartorio", label: "Cartório", type: "money", width: 100, editable: E }]; };
+
 /* =============== PRESTAÇÕES =============== */
 async function pgPrestacoes(c, prog, ano){
   const E = edita("prestacoes");
@@ -589,21 +680,12 @@ async function pgPrestacoes(c, prog, ano){
   $$("[data-pg]", c).forEach(b => b.onclick = () => pgPrestacoes(c, b.dataset.pg, ano));
   $("#selAno").onchange = () => pgPrestacoes(c, prog, +$("#selAno").value);
   const base = [{ key: "_nome", label: "Escola", type: "name", width: 250 }, { key: "responsaveis", label: "Responsável", type: "people", width: 100, editable: E }];
-  const cols = prog === "PTRF" ? [...base,
-      { key: "quem_presta", label: "Prestação", type: "status", dict: ST.quem, width: 110, editable: E, clearable: true },
-      { key: "status", label: "Status", type: "status", dict: ST.prestacao, width: 130, editable: E },
-      { key: "prioridade", label: "Prioridade", type: "text", width: 90, editable: E },
-      { key: "inicio", label: "Início", type: "date", width: 100, editable: E }, { key: "prazo", label: "Prazo", type: "date", width: 100, editable: E },
-      { key: "entregue_em", label: "Entregue em", type: "date", width: 100, editable: E }, { key: "obs", label: "Obs.", type: "text", width: 160, editable: E }]
-    : [...base, { key: "status", label: "Status", type: "status", dict: ST.prestacao, width: 130, editable: E },
-      ...MESES.map(mm => ({ key: "m_" + mm, label: mm, type: "status", dict: ST.mes, width: 46, editable: E, clearable: true, battery: false,
-        get: r => r.meses?.[mm] || null, set: (r, v) => { r.meses = { ...(r.meses || {}) }; if (v) r.meses[mm] = v; else delete r.meses[mm]; } })),
-      { key: "obs", label: "Obs.", type: "text", width: 160, editable: E }];
+  const cols = [...base, ...colsPrest(prog, E)];
   new Board($("#bd"), {
     rows, team: S.team, groupBy: r => r.referencia, groupLabel: k => `${prog} ${ano} – ${k}`, searchText: r => r._nome, columns: cols,
     onOpen: r => fichaEscola(r.escola_id, "prestacoes"),
-    onEdit: async (r, key, v) => { const p = key.startsWith("m_") ? { meses: r.meses } : { [key]: v }; if (key === "status" && v === "Entregue" && !r.entregue_em){ p.entregue_em = today(); r.entregue_em = p.entregue_em; } await S.api.update("prestacoes", { id: r.id }, p); },
-    afterRender: el => { if (prog === "PDDE") el.querySelectorAll("table.bd .chip").forEach(ch => { if (ch.textContent.length > 12){ ch.classList.add("mini"); } }); },
+    onEdit: salvarPrest,
+    afterRender: el => { if (prog === "PDDE") pddeMini(el); },
   });
   if ($("#btNovo")) $("#btNovo").onclick = () => criarParaTodas("prestacoes", { programa: prog, ano }, prog === "PTRF" ? "Referência (ex.: 3º Repasse)" : "Referência (Básico, Estrutura, Qualidade…)", ref => ({ referencia: ref, status: "Não iniciado" }), "escola_id,ano,programa,referencia", () => pgPrestacoes(c, prog, ano));
 }
@@ -626,11 +708,8 @@ async function pgContabil(c, ano){
   const nArq = await contarArquivos();
   c.innerHTML = header("Contábil — balancetes e obrigações", `${anoSel("selAno", [thisYear() - 1, thisYear(), thisYear() + 1, ano], ano)} ${E ? `<button class="btn" id="btNovo">+ Criar ano para todas</button>` : ""}`) + `<div id="bd"></div>`;
   $("#selAno").onchange = () => pgContabil(c, +$("#selAno").value);
-  const st = (k, l, d) => ({ key: k, label: l, type: "status", dict: d, width: 120, editable: E, clearable: true });
   new Board($("#bd"), { rows, team: S.team, groupLabel: () => `Balancete ${ano}`, groupBy: () => ano, searchText: r => r._nome,
-    columns: [{ key: "_nome", label: "Escola", type: "name", width: 250, sub: subAnexo(nArq, ano, "Balancete") }, { key: "responsaveis", label: "Responsável", type: "people", width: 100, editable: E },
-      st("rep1", `1º Repasse`, ST.balancete), st("rep2", "2º Repasse", ST.balancete), st("rep3", "3º Repasse", ST.balancete), st("pdde", "PDDE", ST.balancete),
-      st("ecd", "ECD", ST.obrigacao), st("ecf", "ECF", ST.obrigacao), { key: "obs", label: "Obs.", type: "text", width: 150, editable: E }],
+    columns: [{ key: "_nome", label: "Escola", type: "name", width: 250, sub: subAnexo(nArq, ano, "Balancete") }, { key: "responsaveis", label: "Responsável", type: "people", width: 100, editable: E }, ...colsBal(E)],
     onOpen: r => fichaEscola(r.escola_id, "contabil"), onEdit: (r, k, v) => S.api.update("balancetes", { id: r.id }, { [k]: v }),
     afterRender: el => ligarAnexos(el, () => pgContabil(c, ano)) });
   if ($("#btNovo")) $("#btNovo").onclick = () => criarParaTodas("balancetes", { ano }, null, () => ({ rep1: "Não iniciado", rep2: "Não iniciado", rep3: "Não iniciado", pdde: "Não iniciado" }), "escola_id,ano", () => pgContabil(c, ano));
@@ -643,16 +722,8 @@ async function pgAtas(c, ano){
   const nArq = await contarArquivos();
   c.innerHTML = header("ATA Bienal", `${anoSel("selAno", [...anos, thisYear(), thisYear() + 1], ano)} ${E ? `<button class="btn" id="btNovo">+ Criar ano para todas</button>` : ""}`) + `<div id="bd"></div>`;
   $("#selAno").onchange = () => pgAtas(c, +$("#selAno").value);
-  const quem = { FAG: ST.quem.FAG, ESCOLA: ST.quem.ESCOLA };
   new Board($("#bd"), { rows, groupBy: () => ano, groupLabel: () => `Escolas – ${ano}`, searchText: r => r._nome,
-    columns: [{ key: "_nome", label: "Escola", type: "name", width: 250, sub: subAnexo(nArq, ano, "Recibo de cartório") },
-      { key: "elaboracao", label: "Elaboração", type: "status", dict: quem, width: 100, editable: E, clearable: true },
-      { key: "arquivo_status", label: "Arquivo ATA", type: "status", dict: ST.ataArquivo, width: 130, editable: E, clearable: true },
-      { key: "documentos_status", label: "Documentos", type: "status", dict: ST.ataDocs, width: 100, editable: E, clearable: true },
-      { key: "data_envio", label: "Envio p/ escola", type: "date", width: 110, editable: E },
-      { key: "pagamento", label: "Pagamento", type: "status", dict: ST.ataPag, width: 130, editable: E, clearable: true },
-      { key: "data_entrada_ata", label: "Entrada ATA", type: "date", width: 105, editable: E }, { key: "data_entrada_termo", label: "Entrada termo", type: "date", width: 105, editable: E },
-      { key: "valor_cartorio", label: "Cartório", type: "money", width: 100, editable: E }],
+    columns: [{ key: "_nome", label: "Escola", type: "name", width: 250, sub: subAnexo(nArq, ano, "Recibo de cartório") }, ...colsAta(E)],
     onOpen: r => fichaEscola(r.escola_id, "contabil"), onEdit: (r, k, v) => S.api.update("atas", { id: r.id }, { [k]: v }),
     afterRender: el => ligarAnexos(el, () => pgAtas(c, ano)) });
   if ($("#btNovo")) $("#btNovo").onclick = () => criarParaTodas("atas", { ano: thisYear() + 1 }, null, () => ({ arquivo_status: "Não recebido", documentos_status: "Não feito" }), "escola_id,ano", () => pgAtas(c));

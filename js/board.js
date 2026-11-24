@@ -3,9 +3,9 @@ import { esc, brl, fmtDate, chip, toast, $$ } from "./util.js";
 
 const GROUP_COLORS = ["#3560b5","#ef3a20","#63b231","#fabb17","#f46e16","#66c8f0","#9d50dd","#f89fa1","#037f4c","#22305e","#ff5ac4","#7f5347"];
 let popEl = null;
-function closePop(){ popEl?.remove(); popEl = null; }
+export function closePop(){ popEl?.remove(); popEl = null; }
 document.addEventListener("mousedown", e => { if (popEl && !popEl.contains(e.target)) closePop(); });
-function popover(anchor, html){
+export function popover(anchor, html){
   closePop(); popEl = document.createElement("div"); popEl.className = "pop"; popEl.innerHTML = html; document.body.append(popEl);
   const r = anchor.getBoundingClientRect(); const w = popEl.offsetWidth, h = popEl.offsetHeight;
   popEl.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + "px";
@@ -24,7 +24,7 @@ export class Board {
   constructor(el, opts){
     this.el = el; this.o = { rowKey: "id", collapsed: new Set(), ...opts }; this.q = "";
     this.fkey = "fag_filtros_" + (opts.id || location.hash.replace(/\W/g, "") || "q") + "_" + opts.columns.map(c => c.key).join(".");
-    try { const f = JSON.parse(localStorage.getItem(this.fkey)) || {}; this.rules = f.rules || []; this.modo = f.modo || "e"; } catch { this.rules = []; this.modo = "e"; }
+    try { const f = opts.semFerramentas ? {} : JSON.parse(localStorage.getItem(this.fkey)) || {}; this.rules = f.rules || []; this.modo = f.modo || "e"; } catch { this.rules = []; this.modo = "e"; }
     if (opts.lembrarGrupos){ try { const g = JSON.parse(localStorage.getItem(this.fkey + "_grp")); if (g) this.o.collapsed = new Set(g); } catch {} }
     this.render();
   }
@@ -129,7 +129,7 @@ export class Board {
     const o = this.o; const cols = o.columns; const gs = this.groups();
     if (this.el.querySelector(".bd-search")) this._focus = document.activeElement?.classList.contains("bd-search");
     const nf = (this.rules || []).filter(x => x.op).length; const tot = gs.reduce((a, g) => a + g.rows.length, 0);
-    const head = `<div class="bd-tools">${o.toolbar || ""}<input class="in bd-search" placeholder="Buscar…" value="${esc(this.q)}" style="max-width:240px">
+    const head = o.semFerramentas ? "" : `<div class="bd-tools">${o.toolbar || ""}<input class="in bd-search" placeholder="Buscar…" value="${esc(this.q)}" style="max-width:240px">
       <button class="btn sm ${nf ? "" : "sec"} bd-fbtn">⚲ Filtrar${nf ? ` (${nf})` : ""}</button>${nf ? `<button class="btn sm ghost bd-fclr">Limpar filtros</button><span class="small muted">${tot} de ${(o.rows || []).length}</span>` : ""}</div>`;
     const tables = gs.map((g, gi) => {
       const color = o.groupColor ? o.groupColor(g.key, gi) : GROUP_COLORS[gi % GROUP_COLORS.length];
@@ -150,9 +150,9 @@ export class Board {
     }).join("");
     this.el.innerHTML = head + (tables || `<div class="card muted">${o.emptyText || "Nenhum registro."}</div>`);
     const s = this.el.querySelector(".bd-search");
-    this.el.querySelector(".bd-fbtn").onclick = e => { e.stopPropagation(); this.abrirFiltro(e.currentTarget); };
+    if (s) this.el.querySelector(".bd-fbtn").onclick = e => { e.stopPropagation(); this.abrirFiltro(e.currentTarget); };
     this.el.querySelector(".bd-fclr")?.addEventListener("click", () => { this.rules = []; this.saveF(); this.render(); });
-    s.oninput = () => { this.q = s.value; const p = s.selectionStart; this.render(); const n = this.el.querySelector(".bd-search"); n.focus(); n.setSelectionRange(p, p); };
+    if (s) s.oninput = () => { this.q = s.value; const p = s.selectionStart; this.render(); const n = this.el.querySelector(".bd-search"); n.focus(); n.setSelectionRange(p, p); };
     $$(".bd-gh", this.el).forEach(h => h.onclick = () => { const k = h.dataset.g; o.collapsed.has(k) ? o.collapsed.delete(k) : o.collapsed.add(k);
       if (o.lembrarGrupos) try { localStorage.setItem(this.fkey + "_grp", JSON.stringify([...o.collapsed])); } catch {}
       this.render(); });

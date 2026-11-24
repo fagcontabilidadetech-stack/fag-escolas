@@ -535,8 +535,8 @@ async function fArquivos(fb, e, again){
     try { if (a.path) await S.api.files.remove(a.path); await S.api.remove("escola_arquivos", { id: a.id }); audit("excluir_arquivo", "escola_arquivos", e.id, { descricao: a.descricao, nome: a.nome }); toast("Arquivo excluído"); again(); }
     catch (err){ toast("Erro: " + err.message); } });
 }
-async function contarArquivos(){ try { const r = await S.api.select("escola_arquivos", { cols: "escola_id" }); const m = {}; r.forEach(x => m[x.escola_id] = (m[x.escola_id] || 0) + 1); return m; } catch { return {}; } }
-const subAnexo = (nArq, ano, cat) => r => `${podeAnexar() ? `<button class="btn ghost sm" style="padding:0 4px" data-anx="${r.escola_id}" data-ano="${ano}" data-cat="${cat}">📎 Anexar</button>` : ""}${nArq[r.escola_id] ? ` <a href="#" class="small" data-varq="${r.escola_id}">${nArq[r.escola_id]} arquivo(s)</a>` : ""}`;
+async function contarArquivos(){ try { const r = await S.api.select("escola_arquivos", { cols: "escola_id,ano" }); const m = {}; r.forEach(x => { const k = x.escola_id + "|" + x.ano; m[k] = (m[k] || 0) + 1; }); return m; } catch { return {}; } }   // por escola e ano
+const subAnexo = (nArq, ano, cat) => r => `${podeAnexar() ? `<button class="btn ghost sm" style="padding:0 4px" data-anx="${r.escola_id}" data-ano="${ano}" data-cat="${cat}">📎 Anexar</button>` : ""}${nArq[r.escola_id + "|" + ano] ? ` <a href="#" class="small" data-varq="${r.escola_id}">${nArq[r.escola_id + "|" + ano]} arquivo(s) de ${ano}</a>` : ""}`;
 function ligarAnexos(el, recarregar){
   $$("[data-anx]", el).forEach(b => b.onclick = ev => { ev.stopPropagation(); anexarArquivo(b.dataset.anx, { ano: +b.dataset.ano, categoria: b.dataset.cat }, recarregar); });
   $$("[data-varq]", el).forEach(a => a.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); fichaEscola(a.dataset.varq, "arquivos"); });

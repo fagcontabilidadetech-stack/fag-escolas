@@ -451,6 +451,35 @@ async function fTarefas(fb, e, again){
   $$("[data-t]", fb).forEach(x => x.onclick = () => abrirTarefa(ts.find(t => t.id === x.dataset.t), again));
 }
 
+/* =============== GALERIA DO MONDAY → ARQUIVOS =============== */
+function copiarGaleriaMonday(){
+  const md = modal(`<h2>Copiar arquivos da galeria do monday</h2>
+    <p class="small">Cole o seu <b>token pessoal do monday</b> (o mesmo do importador: monday → foto do perfil → Desenvolvedores → Meus tokens). Ele é usado só agora e não fica salvo.</p>
+    <div class="field"><label class="f">Token do monday</label><input class="in" id="gTk" type="password" autocomplete="off"></div>
+    <div style="display:flex;gap:8px"><button class="btn" id="gOk">Copiar arquivos</button><button class="btn sec" id="gCx">Fechar</button></div>
+    <div id="gLog" class="small" style="margin-top:12px;max-height:260px;overflow:auto;white-space:pre-wrap"></div>`);
+  const log = t => { const el = md.q("#gLog"); el.textContent += t + "\n"; el.scrollTop = el.scrollHeight; };
+  md.q("#gCx").onclick = md.close;
+  md.q("#gOk").onclick = async () => {
+    const token = md.q("#gTk").value.trim(); if (!token) return log("Cole o token do monday.");
+    md.q("#gOk").disabled = true;
+    try {
+      const bs = (await S.api.select("balancetes")).filter(b => b.monday_id && S.esc[b.escola_id]);
+      const itens = bs.map(b => ({ monday_id: b.monday_id, escola_id: b.escola_id, ano: b.ano, categoria: "Balancete" }));
+      log(`${itens.length} escolas/anos para verificar…`);
+      let feitos = 0, pulados = 0, erros = [];
+      for (let i = 0; i < itens.length; i += 8){
+        const r = await S.api.fn("importar-galeria-monday", { token, itens: itens.slice(i, i + 8) });
+        feitos += r.feitos; pulados += r.pulados; erros.push(...r.erros);
+        log(`${Math.min(i + 8, itens.length)}/${itens.length} · ${feitos} copiados · ${pulados} já existiam${r.erros.length ? " · " + r.erros.length + " erro(s)" : ""}`);
+      }
+      log(`\nConcluído: ${feitos} arquivo(s) copiado(s), ${pulados} já existiam.` + (erros.length ? `\nErros:\n- ${erros.join("\n- ")}` : ""));
+      audit("copiar_galeria_monday", "escola_arquivos", null, { feitos, pulados, erros: erros.length });
+    } catch (err){ log("Erro: " + err.message); }
+    md.q("#gOk").disabled = false;
+  };
+}
+
 /* =============== ARQUIVOS DA ESCOLA =============== */
 const CATEGORIAS = ["Recibo de cartório", "Recibo ECD/ECF", "ATA", "Estatuto", "Contrato", "Balancete", "Prestação de contas", "Extrato bancário", "Nota fiscal", "Documento da escola", "Outros"];
 const podeAnexar = () => edita("escolas") || edita("contabil") || edita("atas");
@@ -847,13 +876,18 @@ async function pgConfig(c){
       <div class="field"><label class="f">Recebendo propostas</label><select class="in" id="cAb"><option value="1">Sim</option><option value="0" ${cfg.aberto ? "" : "selected"}>Não (prazo encerrado)</option></select></div></div>
       <button class="btn" id="svCfg">Salvar</button></div>
     <div class="card"><h2>Importar do monday</h2><p class="small muted">Lê os quadros da pasta <b>Escolas</b> no monday e atualiza o CRM. <b>Nada é alterado ou apagado no monday.</b> Pode repetir quantas vezes quiser até janeiro: os registros são atualizados, não duplicados. A renovação do ano da campanha não é sobrescrita.</p>
-      <button class="btn" id="btMon">Abrir importador</button></div>
+      <button class="btn" id="btMon">Abrir importador</button>
+      <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+      <h3 style="margin:0 0 4px">Arquivos da galeria (Balancetes)</h3>
+      <p class="small muted" style="margin:0 0 10px">Copia para os <b>Arquivos</b> de cada escola os recibos de ECD/ECF e balancetes que estão na aba "Arquivos" das escolas nos quadros Balancetes 2025 e 2026 do monday. Os arquivos passam a ficar guardados no CRM. Pode repetir: o que já foi copiado é pulado.</p>
+      <button class="btn sec" id="btGal">Copiar arquivos da galeria</button></div>
     <div class="card"><h2>Cópia de segurança</h2><p class="small muted">Baixa uma planilha com todos os dados do CRM (escolas, contratos, mensalidades, prestações, contábil, ATA, tarefas e lista de arquivos). As senhas SIG / Web <b>não</b> vão na cópia: ficam só no banco, criptografadas. Guarde o arquivo em local protegido da FAG.</p>
       <button class="btn" id="btBkp">⬇ Baixar cópia de segurança</button></div>
     <div class="card"><h2>Registro de acessos sensíveis</h2><ul class="list">${aud.slice(0, 50).map(a => `<li><span>${esc(pn[a.quem] || "?")} · ${esc(a.acao)} ${a.registro && S.esc[a.registro] ? "· " + esc(S.esc[a.registro].nome) : ""}</span><span class="small muted">${fmtDate(a.quando)}</span></li>`).join("") || "<li class='muted'>Nada registrado.</li>"}</ul></div>`;
   $("#svCfg").onclick = async () => { const v = { ano: +$("#cAno").value, valorGuia: r2(+$("#cGuia").value), vigencia: $("#cVig").value.trim(), aberto: $("#cAb").value === "1" };
     await S.api.upsert("config", [{ chave: "campanha", valor: v }], "chave"); S.cfg = v; toast("Configuração salva"); };
   $("#btMon").onclick = () => abrirImportador(S, async () => { setEscolas(await S.api.select("escolas", { order: ["nome"] })); });
+  $("#btGal").onclick = copiarGaleriaMonday;
   $("#btBkp").onclick = async () => {
     const b = $("#btBkp"); b.disabled = true; b.textContent = "Gerando…";
     try {

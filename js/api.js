@@ -32,6 +32,9 @@ async function supabaseApi(){
       let out = []; for (let i = 0; i < rows.length; i += 500) out = out.concat(chk(await sb.from(t).upsert(rows.slice(i, i + 500), { onConflict, ignoreDuplicates }).select()));
       return out; },
     async remove(t, match){ let q = sb.from(t).delete(); for (const [k, v] of Object.entries(match)) q = q.eq(k, v); return chk(await q); },
+    async fn(nome, body){ const { data, error } = await sb.functions.invoke(nome, { body });
+      if (error){ let msg = error.message; try { const j = await error.context.json(); msg = j.erro || msg; } catch {} throw new Error(msg); }
+      if (data?.erro) throw new Error(data.erro); return data; },
     async rpc(fn, args){ const d = chk(await sb.rpc(fn, args)); if (d && typeof d === "object" && !Array.isArray(d) && d.erro) throw new Error(d.erro); return d; },
     auth: {
       async login(email, pin){ chk(await sb.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: pin })); },
@@ -100,6 +103,7 @@ function demoApi(){
     },
     async remove(t, match){ fresh(); db[t] = T(t).filter(x => !Object.entries(match).every(([k, v]) => x[k] === v)); save(); },
     async rpc(fn, a){ return demoRpc(fn, a); },
+    async fn(){ throw new Error("Disponível só no sistema real (não na demonstração)."); },
     auth: {
       async login(email, pin){ if (!/^\d{6}$/.test(pin)) throw new Error("Invalid login credentials");
         email = email.toLowerCase();

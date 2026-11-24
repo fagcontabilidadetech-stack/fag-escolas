@@ -14,11 +14,27 @@ export function popover(anchor, html){
 }
 
 export function battery(dict, values){
-  const n = values.length || 1; const cnt = {};
+  const total = values.length; const n = total || 1; const cnt = {};
   values.forEach(v => cnt[v ?? ""] = (cnt[v ?? ""] || 0) + 1);
-  return `<div class="battery" title="${esc(Object.entries(cnt).map(([k, v]) => `${dict[k]?.label || k || "vazio"}: ${v}`).join(" · "))}">` +
-    Object.entries(cnt).map(([k, v]) => `<i style="width:${v / n * 100}%;background:${dict[k]?.color || "#d9d3bf"}"></i>`).join("") + `</div>`;
+  const ordem = [...Object.keys(dict), ""].filter(k => cnt[k]).concat(Object.keys(cnt).filter(k => k !== "" && !dict[k]));
+  return `<div class="battery">` + ordem.map(k => { const v = cnt[k];
+    const tip = `${dict[k]?.label || k || "Vazio"}: ${v}/${total} (${Math.round(v / n * 100)}%)`;
+    return `<i data-tip="${esc(tip)}" style="width:${v / n * 100}%;background:${dict[k]?.color || "#d9d3bf"}"></i>`; }).join("") + `</div>`;
 }
+
+/* dica flutuante da barra de status: mostra "Status: 10/122 (8%)" ao passar o mouse ou tocar */
+let tipEl = null;
+const mostrarTip = (alvo) => {
+  if (!tipEl){ tipEl = document.createElement("div"); tipEl.className = "bat-tip"; document.body.append(tipEl); }
+  tipEl.textContent = alvo.dataset.tip; tipEl.style.display = "block";
+  const r = alvo.getBoundingClientRect(), w = tipEl.offsetWidth;
+  tipEl.style.left = Math.max(6, Math.min(innerWidth - w - 6, r.left + r.width / 2 - w / 2)) + "px";
+  tipEl.style.top = (r.top - tipEl.offsetHeight - 8 < 4 ? r.bottom + 8 : r.top - tipEl.offsetHeight - 8) + "px";
+};
+const esconderTip = () => { if (tipEl) tipEl.style.display = "none"; };
+document.addEventListener("mouseover", e => { const i = e.target.closest?.(".battery i[data-tip]"); i ? mostrarTip(i) : esconderTip(); });
+document.addEventListener("touchstart", e => { const i = e.target.closest?.(".battery i[data-tip]"); i ? mostrarTip(i) : esconderTip(); }, { passive: true });
+addEventListener("scroll", esconderTip, true);
 
 export class Board {
   constructor(el, opts){

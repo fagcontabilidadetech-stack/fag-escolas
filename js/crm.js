@@ -452,7 +452,7 @@ async function fTarefas(fb, e, again){
 }
 
 /* =============== ARQUIVOS DA ESCOLA =============== */
-const CATEGORIAS = ["Recibo de cartório", "ATA", "Estatuto", "Contrato", "Balancete", "Prestação de contas", "Extrato bancário", "Nota fiscal", "Documento da escola", "Outros"];
+const CATEGORIAS = ["Recibo de cartório", "Recibo ECD/ECF", "ATA", "Estatuto", "Contrato", "Balancete", "Prestação de contas", "Extrato bancário", "Nota fiscal", "Documento da escola", "Outros"];
 const podeAnexar = () => edita("escolas") || edita("contabil") || edita("atas");
 const icone = n => /\.pdf$/i.test(n || "") ? "📕" : /\.(docx?|odt|rtf)$/i.test(n || "") ? "📘" : /\.(xlsx?|ods|csv)$/i.test(n || "") ? "📗" : /\.(jpe?g|png|gif|webp|heic|bmp)$/i.test(n || "") ? "🖼️" : "📄";
 const tamanho = b => !b ? "" : b > 1048576 ? (b / 1048576).toFixed(1).replace(".", ",") + " MB" : Math.max(1, Math.round(b / 1024)) + " KB";

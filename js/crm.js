@@ -464,7 +464,7 @@ function copiarGaleriaMonday(){
     const token = md.q("#gTk").value.trim(); if (!token) return log("Cole o token do monday.");
     md.q("#gOk").disabled = true;
     try {
-      const bs = (await S.api.select("balancetes")).filter(b => b.monday_id && S.esc[b.escola_id]);
+      const bs = (await S.api.select("balancetes", { eq: { ano: 2025 } })).filter(b => b.monday_id && S.esc[b.escola_id]);   // 2026 no monday era cópia de 2025
       const itens = bs.map(b => ({ monday_id: b.monday_id, escola_id: b.escola_id, ano: b.ano, categoria: "Balancete" }));
       log(`${itens.length} escolas/anos para verificar…`);
       let feitos = 0, pulados = 0, erros = [];
@@ -879,7 +879,7 @@ async function pgConfig(c){
       <button class="btn" id="btMon">Abrir importador</button>
       <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
       <h3 style="margin:0 0 4px">Arquivos da galeria (Balancetes)</h3>
-      <p class="small muted" style="margin:0 0 10px">Copia para os <b>Arquivos</b> de cada escola os recibos de ECD/ECF e balancetes que estão na aba "Arquivos" das escolas nos quadros Balancetes 2025 e 2026 do monday. Os arquivos passam a ficar guardados no CRM. Pode repetir: o que já foi copiado é pulado.</p>
+      <p class="small muted" style="margin:0 0 10px">Copia para os <b>Arquivos</b> de cada escola os recibos de ECD/ECF e balancetes que estão na aba "Arquivos" das escolas no quadro Balancetes 2025 do monday (o de 2026 tinha só cópias). Os arquivos passam a ficar guardados no CRM. Pode repetir: o que já foi copiado é pulado.</p>
       <button class="btn sec" id="btGal">Copiar arquivos da galeria</button></div>
     <div class="card"><h2>Cópia de segurança</h2><p class="small muted">Baixa uma planilha com todos os dados do CRM (escolas, contratos, mensalidades, prestações, contábil, ATA, tarefas e lista de arquivos). As senhas SIG / Web <b>não</b> vão na cópia: ficam só no banco, criptografadas. Guarde o arquivo em local protegido da FAG.</p>
       <button class="btn" id="btBkp">⬇ Baixar cópia de segurança</button></div>

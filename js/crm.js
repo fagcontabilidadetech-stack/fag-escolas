@@ -86,10 +86,15 @@ async function checarInatividade(){
 setInterval(checarInatividade, 30000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checarInatividade(); });
 
-async function carregarTravas(){
-  S.travas = new Set((await S.api.select("config", { eq: { chave: "travas_escolas" } }).catch(() => []))[0]?.valor || []);
-  return S.travas;
+/* cadeados de colunas por módulo (config: travas_<módulo>) */
+async function carregarTravasMod(mod){
+  const set = new Set((await S.api.select("config", { eq: { chave: "travas_" + mod } }).catch(() => []))[0]?.valor || []);
+  (S.travasMod ||= {})[mod] = set; if (mod === "escolas") S.travas = set;
+  return set;
 }
+const salvarTravasMod = async (mod, lista) => { await S.api.upsert("config", [{ chave: "travas_" + mod, valor: lista }], "chave"); (S.travasMod ||= {})[mod] = new Set(lista); if (mod === "escolas") S.travas = new Set(lista); audit("travas_colunas", "config", null, { modulo: mod, colunas: lista }); };
+const travadoMod = (mod, k) => !!S.travasMod?.[mod]?.has(k);
+const carregarTravas = () => carregarTravasMod("escolas");
 const travado = k => !!S.travas?.has(k);
 const LBL_TRAVA = " 🔒";
 
@@ -215,7 +220,7 @@ async function pgEscolas(c){
   c.innerHTML = header("Escolas", E ? `<button class="btn" id="btNova">+ Nova escola</button>` : "") + `<div id="bd"></div>`;
   const travas = await carregarTravas();
   const b = new Board($("#bd"), {
-    travas, podeTravar: isMaster(), onTravar: async lista => { await S.api.upsert("config", [{ chave: "travas_escolas", valor: lista }], "chave"); S.travas = new Set(lista); audit("travas_colunas", "config", null, { colunas: lista }); },
+    travas, podeTravar: isMaster(), onTravar: lista => salvarTravasMod("escolas", lista),
     rows: S.escolas, team: S.team, groupBy: e => e.situacao === "ativa" ? "Ativas" : "Ex-clientes", groupColor: k => k === "Ativas" ? "#3560b5" : "#a9a9a9",
     searchText: e => [e.nome, e.cnpj, e.codigo, e.dre, ...(e.aliases || [])].join(" "),
     columns: [
@@ -385,30 +390,33 @@ async function fMens(fb, e, again){
         if (m) return `<div class="mcel ${E ? "ed" : ""}" ${E ? `data-m="${m.id}" role="button" tabindex="0"` : ""}><div class="muted">${mm}</div>${chip(ST.mensalidade, m.status, { cls: "mini" })}<div>${m.valor != null ? Number(m.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : ""}</div>${m.status === "pago" && m.data ? `<div class="muted" style="font-size:10.5px">${fmtDate(m.data).slice(0, 5)}${m.forma ? " · " + esc(m.forma) : ""}</div>` : ""}</div>`;
         return `<div class="mcel"><div class="muted">${mm}</div>${E ? `<button class="btn sm ghost" data-novo="${comp}" title="Lançar ${mm}/${a}">+</button>` : "–"}</div>`; }).join("")}</div>
         <div class="small muted" style="margin-top:8px">Pago no ano: <b>${brl(pago)}</b>${aberto ? ` · Em aberto até hoje: <b style="color:var(--bad)">${brl(aberto)}</b>` : ""}</div></div>`; }).join("") || `<div class="card muted">Sem mensalidades lançadas.</div>`);
+  await carregarTravasMod("mensalidades");
   $$("[data-m]", fb).forEach(el => { const abrir = () => editarMensalidade(ms.find(m => m.id === el.dataset.m), e, again); el.onclick = abrir; el.onkeydown = ev => { if (ev.key === "Enter") abrir(); }; });
   $$("[data-novo]", fb).forEach(el => el.onclick = () => editarMensalidade({ escola_id: e.id, competencia: el.dataset.novo, valor: e.honorario, status: "a_receber" }, e, again));
 }
 
 function editarMensalidade(m, e, done){
   const novo = !m.id;
+  const tv = k => !novo && travadoMod("mensalidades", k), dis = k => tv(k) ? "disabled title=\"Coluna travada pelo gestor\"" : "", lb = k => tv(k) ? LBL_TRAVA : "";
   const opt = (dict, v, vazio) => (vazio ? `<option value="">—</option>` : "") + Object.entries(dict).map(([k, d]) => `<option value="${esc(k)}" ${k === v ? "selected" : ""}>${esc(d.label)}</option>`).join("");
   const md = modal(`<h2>${novo ? "Lançar" : "Mensalidade"} ${compLabel(m.competencia)}</h2><div class="small muted" style="margin:-4px 0 12px">${esc(e.nome)}</div>
-    ${!novo && m.status !== "pago" ? `<button class="btn" id="bxHoje" style="width:100%;margin-bottom:14px;background:#00c875">✓ Dar baixa hoje (${fmtDate(today())})</button>` : ""}
-    <div class="grid2"><div class="field"><label class="f">Status</label><select class="in" id="mSt">${opt(ST.mensalidade, m.status)}</select></div>
-      <div class="field"><label class="f">Valor (R$)</label><input class="in" id="mVl" type="number" step="0.01" inputmode="decimal" value="${m.valor ?? ""}"></div>
-      <div class="field"><label class="f">Data da baixa</label><input class="in" id="mDt" type="date" value="${m.data || ""}"></div>
-      <div class="field"><label class="f">Forma de pagamento</label><select class="in" id="mFm">${opt(DICT_FORMA, m.forma, true)}</select></div>
-      <div class="field"><label class="f">Cartório (R$)</label><input class="in" id="mCt" type="number" step="0.01" inputmode="decimal" value="${m.cartorio ?? ""}"></div>
-      <div class="field"><label class="f">Pacotes no mês</label><div style="display:flex;gap:14px;padding-top:8px">${[["ata","ATA"],["esc","Escan."],["guia","Guias"]].map(([k, l]) => `<label class="small"><input type="checkbox" id="mP_${k}" ${m[k] ? "checked" : ""}> ${l}</label>`).join("")}</div></div></div>
-    <div class="field"><label class="f">Observação</label><input class="in" id="mOb" value="${esc(m.obs || "")}"></div>
+    ${!novo && m.status !== "pago" && !tv("status") ? `<button class="btn" id="bxHoje" style="width:100%;margin-bottom:14px;background:#00c875">✓ Dar baixa hoje (${fmtDate(today())})</button>` : ""}
+    <div class="grid2"><div class="field"><label class="f">Status${lb("status")}</label><select class="in" id="mSt" data-k="status" ${dis("status")}>${opt(ST.mensalidade, m.status)}</select></div>
+      <div class="field"><label class="f">Valor (R$)${lb("valor")}</label><input class="in" id="mVl" data-k="valor" ${dis("valor")} type="number" step="0.01" inputmode="decimal" value="${m.valor ?? ""}"></div>
+      <div class="field"><label class="f">Data da baixa${lb("data")}</label><input class="in" id="mDt" data-k="data" ${dis("data")} type="date" value="${m.data || ""}"></div>
+      <div class="field"><label class="f">Forma de pagamento${lb("forma")}</label><select class="in" id="mFm" data-k="forma" ${dis("forma")}>${opt(DICT_FORMA, m.forma, true)}</select></div>
+      <div class="field"><label class="f">Cartório (R$)${lb("cartorio")}</label><input class="in" id="mCt" data-k="cartorio" ${dis("cartorio")} type="number" step="0.01" inputmode="decimal" value="${m.cartorio ?? ""}"></div>
+      <div class="field"><label class="f">Pacotes no mês</label><div style="display:flex;gap:14px;padding-top:8px">${[["ata","ATA"],["esc","Escan."],["guia","Guias"]].map(([k, l]) => `<label class="small"><input type="checkbox" id="mP_${k}" data-k="${k}" ${m[k] ? "checked" : ""} ${dis(k)}> ${l}${lb(k)}</label>`).join("")}</div></div></div>
+    <div class="field"><label class="f">Observação${lb("obs")}</label><input class="in" id="mOb" data-k="obs" ${dis("obs")} value="${esc(m.obs || "")}"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="ok">Salvar</button><button class="btn sec" id="cx">Cancelar</button></div><div class="err" id="er"></div>`);
   md.q("#cx").onclick = md.close;
-  md.q("#mSt").onchange = () => { if (md.q("#mSt").value === "pago" && !md.q("#mDt").value) md.q("#mDt").value = today(); };
+  md.q("#mSt").onchange = () => { if (md.q("#mSt").value === "pago" && !md.q("#mDt").value && !tv("data")) md.q("#mDt").value = today(); };
   const num = s => s === "" ? null : +s;
   const salvar = async () => {
     const p = { status: md.q("#mSt").value, valor: num(md.q("#mVl").value), data: md.q("#mDt").value || null, forma: md.q("#mFm").value || null,
       cartorio: num(md.q("#mCt").value), obs: md.q("#mOb").value.trim() || null, ata: md.q("#mP_ata").checked, esc: md.q("#mP_esc").checked, guia: md.q("#mP_guia").checked };
-    if (p.status === "pago" && !p.data) p.data = today();
+    if (p.status === "pago" && !p.data && !tv("data")) p.data = today();
+    if (!novo) Object.keys(p).forEach(k => { if (tv(k)) delete p[k]; });   // colunas travadas não são alteradas
     md.q("#ok").disabled = true;
     try {
       if (novo) await S.api.insert("mensalidades", { escola_id: e.id, competencia: m.competencia, responsaveis: e.responsaveis || [], ...p });
@@ -627,8 +635,9 @@ async function pgMensalidades(c, ano){
       <div class="kpi"><div class="l">Pacotes no ano</div><div class="v">${rows.filter(r => r.ata).length} · ${rows.filter(r => r.esc).length} · ${rows.filter(r => r.guia).length}</div><div class="s">ATA · Escaneamento · Guias</div></div></div>
     <div id="bd"></div>`;
   $("#selAno").onchange = () => pgMensalidades(c, +$("#selAno").value);
-  const mesAtual = hojeComp;
+  const travas = await carregarTravasMod("mensalidades");
   new Board($("#bd"), {
+    travas, podeTravar: isMaster(), onTravar: lista => salvarTravasMod("mensalidades", lista),
     rows, team: S.team, groupBy: r => r.competencia, groupOrder: (a, b) => a.localeCompare(b),
     groupLabel: k => "Mensalidades – " + compLabel(k), lembrarGrupos: true, id: "mensalidades" + ano,
     searchText: r => r._nome,
